@@ -1,3 +1,20 @@
+;===========================================================
+;Peppito MOD Playback Driver
+;
+;Version 0.10A
+;Written by Daniel England of Ecclestial Solutions.
+;
+;Copyright 2021, Daniel England. All Rights Reserved.
+;
+;-----------------------------------------------------------
+;
+;
+;-----------------------------------------------------------
+;
+;I want to release this under the LGPL.  I'll make the 
+;commitment and include the licensing infomation soon.
+;
+;===========================================================
 
 ;-----------------------------------------------------------
 TBL_PPTO_JUMP:

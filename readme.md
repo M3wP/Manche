@@ -27,7 +27,7 @@ At the very bottom, the current mixer levels are shown.
 The middle area is blank until you load a MOD.  This area is divided into two main columns, with the instrument information on the right and MOD and playback information on the left.
 
 ## Controls
-To load a MOD file, press F1 and enter the name of the file to load.  Press Return to accept the file name and load the MOD file.
+To load a MOD file, press F1 and enter the name of the file to load.  Press Return to accept the file name and load the MOD file.  Mod files are loaded from the SD card.
 
 To play or stop the loaded MOD file, press Space.
 
@@ -45,10 +45,6 @@ The MOD files must be no larger than 256kB (262144 bytes).
 The MOD files must be the original M.K. or M!K! types.
 
 The MOD files must not have instruments with sample lengths greater than 65535 bytes long.
-
-The MOD files must be on D81 images mounted into the F011 drive.  At present (as of 04JAN2021), there is an issue with the FREEZER not properly attaching disk images while Manche is running.  You must mount the images before running Manche.
-
-Manche will be enhanced to allow loading of MOD files from the SD card instead in the near future.
 
 ## Peppito Performance
 At present, Peppito only supports the following effects:

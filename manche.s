@@ -1,3 +1,21 @@
+;===========================================================
+;Manche MOD Replayer
+;
+;Version 0.11A
+;Written by Daniel England of Ecclestial Solutions.
+;
+;Copyright 2021, Daniel England. All Rights Reserved.
+;
+;-----------------------------------------------------------
+;
+;
+;-----------------------------------------------------------
+;
+;I want to release this under the LGPL.  I'll make the 
+;commitment and include the licensing infomation soon.
+;
+;===========================================================
+
 	.setcpu	"4510"
 
 	.feature	leading_dot_in_identifiers, loose_string_term
@@ -47,9 +65,12 @@ bootstrap:
 
 
 filename:
-	.defPStr	"RESON2.MOD"
-	.byte		$20, $20, $20, $20, $20, $20
+;	.defPStr	""
+	.byte		$00
+	.byte		$20, $20, $20, $20, $20, $20, $20, $20
+	.byte		$20, $20, $20, $20, $20, $20, $20, $20
 	.byte		$20, $20, $20, $20
+	.byte		$00
 
 errStr:
 	.defPStr	"ERROR OPENING FILE!"
@@ -132,6 +153,14 @@ init:
 		LDA	$D610
 		STX	$D610
 		BNE	@loop0
+
+		LDA	#$C0
+		STA	Z:ptrBigglesBufHi
+		LDA	#$03
+		STA	Z:ptrBigglesFNmHi
+
+		LDA	#$00
+		STA	numConvLEAD0
 
 		JSR	initState
 		JSR	initScreen
@@ -1080,15 +1109,29 @@ loadModule:
 ;		INC	$D020
 ;		JMP	@halt
 ;
-		LDA	filename			;Set the file name
+;		LDA	filename			;Set the file name
+;		LDX	#<(filename + 1)
+;		LDY	#>(filename + 1)
+
+		LDY	filename
+		INY
+		LDA	#$00
+		STA	filename, Y
+
 		LDX	#<(filename + 1)
 		LDY	#>(filename + 1)
-		JSR	miniSetFileName
+
+		JSR	bigglesSetFileName
 		
-		LDA	#VAL_DOSFTYPE_SEQ 
-		JSR	miniSetFileType
+		LDY	filename
+		INY
+		LDA	#$20
+		STA	filename, Y
+
+;		LDA	#VAL_DOSFTYPE_SEQ 
+;		JSR	miniSetFileType
 		
-		JSR	miniOpenFile
+		JSR	bigglesOpenFile
 		BCC	@cont1
 
 		JSR	error
@@ -1114,7 +1157,7 @@ loadModule:
 
 		LDZ	#$00
 @loop:
-		JSR	miniReadByte
+		JSR	bigglesReadByte
 		BCS	@done
 
 		NOP
@@ -1142,7 +1185,7 @@ loadModule:
 		JMP	@loop
 
 @done:
-		JSR	miniCloseFile
+		JSR	bigglesCloseFile
 
 		LDA	#$00
 		STA	$D020
@@ -1424,7 +1467,7 @@ numConvPRTINT:
 
 ;de	I'm pretty sure we have a problem below and this will help fix it
 ;		STX 	numConvLEAD0       	;INIT LEAD0 TO NON-NEG
-		LDA	%10000000
+		LDA	#%10000000
 		STA	numConvLEAD0
 		
 ;
@@ -1940,5 +1983,5 @@ initM65IOFast:
 		
 		RTS
 
-	.include	"minime.s"
-
+;	.include	"minime.s"
+	.include	"bigglesworth.s"
