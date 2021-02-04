@@ -1,4 +1,5 @@
-# Manche 0.10A Beta
+
+# Manche 0.12A Beta
 Copyright 2021, Daniel England.  All Rights Reserved.
 
 ## Introduction
@@ -54,8 +55,18 @@ At present, Peppito only supports the following effects:
   - Volume Slide
   - Portamento Up
   - Portamento Down
+  - Fine Portamento Up
+  - Fine Portamento Down
+  - Fine Volume Up
+  - Fine Volume Down
+  - Vibrato
+  - Vibrato + Volume Slide
+  - Tone Portamento
+  - Tone Portamento + Volume Slide
+  - Retrigger
+  - Note Delay
 
-Notably absent is the instrument Fine Tune control which may cause some issues.  This will be fixed in the near future.  
+Fine Tune of instruments is now fully supported.
 
 Also, only the fine speed adjustment is supported, not coarse "Tempo" adjustments.  It is unlikely that this will be supported until after other more important enhancements have been made since it requires very specific playback handling.
 

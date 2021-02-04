@@ -1,7 +1,7 @@
 ;===========================================================
 ;Peppito MOD Playback Driver
 ;
-;Version 0.10A
+;Version 0.12A
 ;Written by Daniel England of Ecclestial Solutions.
 ;
 ;Copyright 2021, Daniel England. All Rights Reserved.
@@ -93,6 +93,13 @@ VAL_FAC_M65RATERTH	=	$0001
 		valSelIns	.byte
 		valSmpOffs	.word
 		valPeriod	.word
+		valPrtPer	.word
+		valPrtSpd	.byte
+		valVtPhs	.byte
+		valVibAdd	.byte
+		valVibSpd	.byte
+		valVibDep	.byte
+		valFxCnt	.byte
 	.endstruct
 
 
@@ -165,6 +172,16 @@ idxPepChn0:
 
 valPepMRg0:
 	.res	8, $00
+
+valPepSin0:
+	.byte	0,  24,  49,  74,  97, 120, 141, 161
+	.byte	180, 197, 212, 224, 235, 244, 250, 253
+	.byte	255, 253, 250, 244, 235, 224, 212, 197
+	.byte	180, 161, 141, 120,  97,  74,  49,  24
+
+valPepFTn0:
+	.word	4340, 4308, 4277, 4247, 4216, 4186, 4156, 4126
+	.word	4096, 4067, 4037, 4008, 3979, 3951, 3922, 3894
 
 
 	.macro	__PEP_SET_MODF_OFFS	ptr, offs
@@ -245,7 +262,17 @@ valPepMRg0:
 		STA	mem + 1
 	.endmacro
 
-	.macro __PEP_MOV_PTR32_IND32 ptr, ind
+	.macro	__PEP_LSR_MEM16	mem
+		CLC
+		LDA	mem + 1
+		LSR
+		STA	mem + 1
+		LDA	mem
+		ROR
+		STA	mem
+	.endmacro
+
+	.macro	__PEP_MOV_PTR32_IND32 ptr, ind
 		LDA	ptr
 		STA	(ind), Y
 		INY
@@ -259,6 +286,105 @@ valPepMRg0:
 		STA	(ind), Y
 		INY
 	.endmacro
+
+	.macro	__PEP_MUL_MEM8_MEM8 mem0, mem1
+		LDA	mem0
+		STA	$D770
+		LDA	#$00
+		STA	$D771
+		STA	$D772
+		STA	$D773
+
+		LDA	mem1
+		STA	$D774
+		LDA	#$00
+		STA	$D775
+		STA	$D776
+		STA	$D777
+
+;	Result in $D77A-
+	.endmacro
+
+	.macro	__PEP_MUL_MEM16_MEM16 mem0, mem1
+		LDA	mem0
+		STA	$D770
+		LDA	mem0 + 1
+		STA	$D771
+		LDA	#$00
+		STA	$D772
+		STA	$D773
+
+		LDA	mem1
+		STA	$D774
+		LDA	mem1 + 1
+		STA	$D775
+		LDA	#$00
+		STA	$D776
+		STA	$D777
+
+;	Result in $D77A-
+	.endmacro
+
+
+	.macro	__PEP_DIV_MEM16_IMM16 mem, imm
+		LDA	mem
+		STA	$D770
+		LDA	mem + 1
+		STA	$D771
+		LDA	#$00
+		STA	$D772
+		STA	$D773
+
+		LDA	#<imm
+		STA	$D774
+		LDA	#>imm
+		STA	$D775
+		LDA	#$00
+		STA	$D776
+		STA	$D777
+
+		LDA	$D020
+		STA	$D020
+		LDA	$D020
+		STA	$D020
+		LDA	$D020
+		STA	$D020
+		LDA	$D020
+		STA	$D020
+
+;	Result in $D76C-
+	.endmacro
+
+	.macro	__PEP_DIV_MEM32_IMM16 mem, imm
+		LDA	mem
+		STA	$D770
+		LDA	mem + 1
+		STA	$D771
+		LDA	mem + 2
+		STA	$D772
+		LDA	mem + 3
+		STA	$D773
+
+		LDA	#<imm
+		STA	$D774
+		LDA	#>imm
+		STA	$D775
+		LDA	#$00
+		STA	$D776
+		STA	$D777
+
+		LDA	$D020
+		STA	$D020
+		LDA	$D020
+		STA	$D020
+		LDA	$D020
+		STA	$D020
+		LDA	$D020
+		STA	$D020
+
+;	Result in $D76C-
+	.endmacro
+
 
 ;-----------------------------------------------------------
 peppitoNOP:
@@ -744,6 +870,166 @@ peppitoReadSeq:
 
 
 ;-----------------------------------------------------------
+peppitoChanPorta:
+;-----------------------------------------------------------
+		LDY	#PEP_CHNDATA::valPeriod
+		LDA	(ptrPepChan), Y
+		STA	valPepTmp1
+		INY
+		LDA	(ptrPepChan), Y
+		STA	valPepTmp1 + 1
+
+		LDY	#PEP_CHNDATA::valPrtPer
+		LDA	(ptrPepChan), Y
+		STA	valPepTmp2
+		INY
+		LDA	(ptrPepChan), Y
+		STA	valPepTmp2 + 1
+
+		LDA	valPepTmp1 + 1
+		CMP	valPepTmp2 + 1
+		BCC	@less0
+		BNE	@cont0
+		LDA	valPepTmp1
+		CMP	valPepTmp2
+		BCC	@less0
+
+		JMP	@cont0
+
+@less0:
+		CLC
+		LDY	#PEP_CHNDATA::valPrtSpd
+		LDA	valPepTmp1
+		ADC	(ptrPepChan), Y
+		STA	valPepTmp1
+		LDA	valPepTmp1 + 1
+		ADC	#$00
+		STA	valPepTmp1 + 1
+
+		LDA	valPepTmp2 + 1
+		CMP	valPepTmp1 + 1
+		BCC	@less1
+		BNE	@cont0
+		LDA	valPepTmp2
+		CMP	valPepTmp1
+		BCC	@less1
+
+		JMP	@cont0
+
+@less1:
+		LDA	valPepTmp2
+		STA	valPepTmp1
+		LDA	valPepTmp2 + 1
+		STA	valPepTmp1 + 1
+
+@cont0:
+		LDA	valPepTmp2 + 1
+		CMP	valPepTmp1 + 1
+		BCC	@less2
+		BNE	@cont1
+		LDA	valPepTmp2
+		CMP	valPepTmp1
+		BCC	@less2
+
+		JMP	@cont1
+
+@less2:
+		SEC
+		LDY	#PEP_CHNDATA::valPrtSpd
+		LDA	valPepTmp1
+		SBC	(ptrPepChan), Y
+		STA	valPepTmp1
+		LDA	valPepTmp1 + 1
+		SBC	#$00
+		STA	valPepTmp1 + 1
+
+		LDA	valPepTmp1 + 1
+		CMP	valPepTmp2 + 1
+		BCC	@less3
+		BNE	@cont1
+		LDA	valPepTmp1
+		CMP	valPepTmp2
+		BCC	@less3
+
+		JMP	@cont1
+
+@less3:
+		LDA	valPepTmp2
+		STA	valPepTmp1
+		LDA	valPepTmp2 + 1
+		STA	valPepTmp1 + 1
+
+@cont1:
+		LDY	#PEP_CHNDATA::valPeriod
+		LDA	valPepTmp1
+		STA	(ptrPepChan), Y
+		INY
+		LDA	valPepTmp1 + 1
+		STA	(ptrPepChan), Y
+
+		RTS
+
+
+;-----------------------------------------------------------
+peppitoChanVibrato:
+;-----------------------------------------------------------
+		LDY	#PEP_CHNDATA::valVtPhs
+		LDA	(ptrPepChan), Y
+		STA	valPepTmp1
+
+		LDY	#PEP_CHNDATA::valVibSpd
+		LDA	(ptrPepChan), Y
+		STA	valPepTmp1 + 1
+
+		__PEP_MUL_MEM8_MEM8 valPepTmp1, valPepTmp1 + 1
+
+		LDA	$D77A
+		STA	valPepTmp1
+		LDA	$D77B
+		STA	valPepTmp1 + 1
+
+		LDA	valPepTmp1
+		AND	#$1F
+		TAX
+
+		LDA	valPepSin0, X
+		STA	valPepTmp2
+
+		LDY	#PEP_CHNDATA::valVibDep
+		LDA	(ptrPepChan), Y
+
+		STA	valPepTmp2 + 1
+
+		__PEP_MUL_MEM8_MEM8 valPepTmp2, valPepTmp2 + 1
+
+		LDA	$D77A
+		STA	valPepTmp2
+		LDA	$D77B
+		STA	valPepTmp2 + 1
+
+		__PEP_DIV_MEM16_IMM16 valPepTmp2, 128
+
+		LDA	$D76C
+		STA	valPepTmp2
+
+		LDA	valPepTmp1
+		AND	#$20
+		BEQ	@update
+
+		SEC
+		LDA	#$01
+		SBC	valPepTmp2
+		STA	valPepTmp2
+
+@update:
+		LDY	#PEP_CHNDATA::valVibAdd
+		LDA	valPepTmp2
+		STA	(ptrPepChan), Y
+
+		RTS
+
+
+;-----------------------------------------------------------
 peppitoChanVolSlide:
 ;-----------------------------------------------------------
 		LDA	valPepTmp0 + 1
@@ -770,7 +1056,7 @@ peppitoChanVolSlide:
 		CMP	#$40
 		BCC	@update
 
-		LDA	#40
+		LDA	#$40
 @update:
 		STA	(ptrPepChan), Y
 		RTS
@@ -778,6 +1064,41 @@ peppitoChanVolSlide:
 @setzero:
 		LDA	#$00
 		JMP	@update
+
+
+;-----------------------------------------------------------
+peppitoChanVolUp:
+;-----------------------------------------------------------
+		LDY	#PEP_CHNDATA::valVol
+		CLC
+		LDA (ptrPepChan), Y
+		ADC	valPepTmp0 + 1
+
+		CMP	#$40
+		BCC	@update
+
+		LDA	#$40
+@update:
+		STA	(ptrPepChan), Y
+
+		RTS
+
+
+;-----------------------------------------------------------
+peppitoChanVolDown:
+;-----------------------------------------------------------
+		LDY	#PEP_CHNDATA::valVol
+		SEC
+		LDA (ptrPepChan), Y
+		SBC	valPepTmp0 + 1
+
+		BPL	@update
+
+		LDA	#$00
+@update:
+		STA	(ptrPepChan), Y
+
+		RTS
 
 
 ;-----------------------------------------------------------
@@ -838,6 +1159,20 @@ peppitoChanPortaDown:
 ;-----------------------------------------------------------
 peppitoChanTick:
 ;-----------------------------------------------------------
+		LDY	#PEP_CHNDATA::valVtPhs
+		LDA	(ptrPepChan), Y
+		TAX
+		INX
+		TXA
+		STA	(ptrPepChan), Y
+
+		LDY	#PEP_CHNDATA::valFxCnt
+		LDA	(ptrPepChan), Y
+		TAX
+		INX
+		TXA
+		STA	(ptrPepChan), Y
+
 		LDY	#PEP_NOTDATA::valEff
 		
 		LDA	(ptrPepChan), Y
@@ -852,7 +1187,7 @@ peppitoChanTick:
 		CMP	#$0A
 		BNE	@tstnext0
 
-;	Volume slide
+;	Volume slide -------------------------------------------
 		JSR	peppitoChanVolSlide
 		JSR	peppitoChanUpdVol
 		RTS
@@ -861,7 +1196,7 @@ peppitoChanTick:
 		CMP	#$01
 		BNE	@tstnext1
 
-;	Portamento up
+;	Portamento up ------------------------------------------
 		JSR	peppitoChanPortaUp
 		JSR	peppitoChanUpdFreq
 		RTS
@@ -870,13 +1205,97 @@ peppitoChanTick:
 		CMP	#$02
 		BNE	@tstnext2
 
-;	Portamento down
+;	Portamento down ----------------------------------------
 		JSR	peppitoChanPortaDown
 		JSR	peppitoChanUpdFreq
 		RTS
 
 @tstnext2:
+		CMP	#$04
+		BNE	@tstnext3
+
+;	Vibrato ------------------------------------------------
+
+		JSR	peppitoChanVibrato
+		JSR	peppitoChanUpdFreq
 		RTS
+
+@tstnext3:
+		CMP	#$06
+		BNE	@tstnext4
+
+;	Vibrato + Volume Slide ---------------------------------
+
+		JSR	peppitoChanVibrato
+		JSR	peppitoChanVolSlide
+
+		JSR	peppitoChanUpdFreq
+		JSR	peppitoChanUpdVol
+
+		RTS
+
+@tstnext4:
+		CMP	#$03
+		BNE	@tstnext5
+
+;	Tone Portamento
+		JSR	peppitoChanPorta
+		JSR	peppitoChanUpdFreq
+
+		RTS
+
+@tstnext5:
+		CMP	#$05
+		BNE	@tstnext6
+
+;	Tone Portamento + Volume Slide
+		JSR	peppitoChanPorta
+		JSR	peppitoChanVolSlide
+
+		JSR	peppitoChanUpdFreq
+		JSR	peppitoChanUpdVol
+
+		RTS
+
+@tstnext6:
+		CMP	#$19
+		BNE	@tstnext7
+
+;	Retrigger ----------------------------------------------
+		LDY	#PEP_CHNDATA::valFxCnt
+		LDA	(ptrPepChan), Y
+		CMP	valPepTmp0 + 1
+		BCS	@retrig0
+
+		RTS
+
+@retrig0:
+		LDY	#PEP_CHNDATA::valFxCnt
+		LDA	#$00
+		STA	(ptrPepChan), Y
+
+		JSR	peppitoChanNoteOn
+		RTS
+
+@tstnext7:
+		CMP	#$1D
+		BNE	@tstnext8
+
+;	Note Delay ---------------------------------------------
+
+		LDY	#PEP_CHNDATA::valFxCnt
+		LDA	(ptrPepChan), Y
+		CMP	valPepTmp0 + 1
+		BEQ	@dely0
+
+		RTS
+
+@dely0:
+		JSR	peppitoChanTrigger
+		RTS
+
+
+@tstnext8:
 
 		RTS
 
@@ -1170,6 +1589,12 @@ peppitoMULT10:
 ;-----------------------------------------------------------
 peppitoChanTrigEffect:
 ;-----------------------------------------------------------
+		LDY	#PEP_CHNDATA::valVibAdd
+		LDA	#$00
+		STA	(ptrPepChan), Y
+		LDY	#PEP_CHNDATA::valFxCnt
+		STA	(ptrPepChan), Y
+
 		LDY	#PEP_NOTDATA::valEff
 		
 		LDA	(ptrPepChan), Y
@@ -1182,7 +1607,8 @@ peppitoChanTrigEffect:
 
 		CMP	#$0D
 		BNE	@tstnxt0
-;	Pattern break
+
+;	Pattern break-------------------------------------------
 ;***FIXME:
 ;		If PLCount < 0 Then Begin
 		LDA	valPepPBrk
@@ -1209,7 +1635,7 @@ peppitoChanTrigEffect:
 		STA	valPepNRow
 
 		CMP	#$40
-		BCC	@exit
+		LBCC	@exit
 
 		LDA	#$00
 		STA	valPepNRow
@@ -1220,8 +1646,10 @@ peppitoChanTrigEffect:
 		CMP	#$0F
 		BNE	@tstnxt1
 
+;	Set Speed ----------------------------------------------
+
 		LDA	valPepTmp0 + 1
-		BEQ	@exit
+		LBEQ	@exit
 
 		CMP	#$20
 		BCS	@spdch0
@@ -1238,13 +1666,14 @@ peppitoChanTrigEffect:
 
 @tstnxt1:
 		CMP	#$0C
-		BNE	@exit
-;	Set volume
+		BNE	@tstnxt2
+
+;	Set volume ---------------------------------------------
 		LDA	valPepTmp0 + 1
 		CMP	#$40
 		BCC	@svol0
 
-		LDA	#40
+		LDA	#$40
 
 @svol0:
 		LDY	#PEP_CHNDATA::valVol
@@ -1253,6 +1682,112 @@ peppitoChanTrigEffect:
 		JSR	peppitoChanUpdVol
 		
 		JMP	@exit
+
+@tstnxt2:
+		CMP	#$11
+		BNE	@tstnxt3
+
+;	Fine Portamento Up -------------------------------------
+		JSR	peppitoChanPortaUp
+		JSR	peppitoChanUpdFreq
+
+		JMP	@exit
+
+@tstnxt3:
+		CMP	#$12
+		BNE	@tstnxt4
+
+;	Fine Portamento Down -----------------------------------
+		JSR	peppitoChanPortaDown
+		JSR	peppitoChanUpdFreq
+
+		JMP	@exit
+
+@tstnxt4:
+		CMP	#$1A
+		BNE	@tstnxt5
+
+;	Fine Volume Up -----------------------------------------
+		JSR	peppitoChanVolUp
+		JSR	peppitoChanUpdVol
+
+		JMP	@exit
+
+@tstnxt5:
+		CMP	#$1B
+		BNE	@tstnxt6
+
+;	Fine Volume Down
+		JSR	peppitoChanVolDown
+		JSR	peppitoChanUpdVol
+
+		JMP	@exit
+
+@tstnxt6:
+		CMP	#$04
+		BNE	@tstnxt7
+
+;	Vibrato ------------------------------------------------
+
+		LDA	valPepTmp0 + 1
+		LSR
+		LSR
+		LSR
+		LSR
+
+		BNE	@vibspd0
+
+		JMP	@vibcont0
+
+@vibspd0:
+		LDY	#PEP_CHNDATA::valVibSpd
+		STA	(ptrPepChan), Y
+
+@vibcont0:
+		LDA	valPepTmp0 + 1
+		AND	#$0F
+
+		BNE	@vibdep0
+
+		JMP	@vibcont1
+
+@vibdep0:
+		LDY	#PEP_CHNDATA::valVibDep
+		STA	(ptrPepChan), Y
+
+@vibcont1:
+		JSR	peppitoChanVibrato
+		JSR	peppitoChanUpdFreq
+
+		JMP	@exit
+
+@tstnxt7:
+		CMP	#$06
+		BNE	@tstnxt8
+
+;	Vibrato + Volume Slide ---------------------------------
+		JSR	peppitoChanVibrato
+		JSR	peppitoChanUpdFreq
+
+		JMP	@exit
+
+@tstnxt8:
+		CMP	#$03
+		BNE	@exit
+
+;	Tone Portamento ----------------------------------------
+
+		LDA	valPepTmp0 + 1
+		BNE	@tport0
+
+		JMP	@exit
+
+@tport0:
+		LDY	#PEP_CHNDATA::valPrtSpd
+		STA	(ptrPepChan), Y
+
+		JSR	peppitoChanUpdFreq
+		RTS
 
 @exit:
 		RTS
@@ -1370,14 +1905,68 @@ peppitoChanTrigger:
 		STA	valPepTmp0
 		INY
 		ORA	(ptrPepChan), Y
-		BEQ	@done
+		LBEQ	@done
+
+;@halt:
+;		INC	$D020
+;		JMP	@halt
 
 		LDA	(ptrPepChan), Y
 		STA	valPepTmp0 + 1
 
-;***FIXME:
 ;		Period := ( Channel.Note.Key * FineTuning[ Channel.FineTune And $F ] ) Shr 11;
+		LDY	#PEP_CHNDATA::valFTune
+		LDA	(ptrPepChan), Y
+		AND	#$0F
+		ASL
+		TAX
+		LDA	valPepFTn0, X
+		STA	valPepTmp2
+		LDA	valPepFTn0 + 1, X
+		STA	valPepTmp2 + 1
+
+		__PEP_MUL_MEM16_MEM16 valPepTmp0, valPepTmp2
+
+		LDA	$D778
+		STA	valPepTmp1
+		LDA	$D779
+		STA	valPepTmp1 + 1
+		LDA	$D77A
+		STA	valPepTmp1 + 2
+		LDA	$D77B
+		STA	valPepTmp1 + 3
+
+		__PEP_DIV_MEM32_IMM16 valPepTmp1, 2048
+
+		LDA	$D76C
+		STA	valPepTmp0
+		LDA	$D76D
+		STA	valPepTmp0 + 1
+
+
 ;		Channel.PortaPeriod := ( Period Shr 1 ) + ( Period And 1 );
+		LDA	valPepTmp0
+		STA	valPepTmp1
+		LDA	valPepTmp0 + 1
+		STA	valPepTmp1 + 1
+
+		__PEP_LSR_MEM16 valPepTmp1
+
+		CLC
+		LDA	valPepTmp0
+		AND	#$01
+		ADC	valPepTmp1
+		STA	valPepTmp1
+		LDA	#$00
+		ADC	valPepTmp1 + 1
+		STA	valPepTmp1 + 1
+
+		LDY	#PEP_CHNDATA::valPrtPer
+		LDA	valPepTmp1
+		STA	(ptrPepChan), Y
+		INY
+		LDA	valPepTmp1 + 1
+		STA	(ptrPepChan), Y
 
 		LDY	#PEP_NOTDATA::valEff
 		LDA	(ptrPepChan), Y
@@ -1391,14 +1980,17 @@ peppitoChanTrigger:
 		LDY	#PEP_CHNDATA::valSelIns
 		STA	(ptrPepChan), Y
 
+;		Channel.Period:= Channel.PortaPeriod
 		LDY	#PEP_CHNDATA::valPeriod
-		LDA	valPepTmp0
+		LDA	valPepTmp1
 		STA	(ptrPepChan), Y
 		INY
-		LDA	valPepTmp0 + 1
+		LDA	valPepTmp1 + 1
 		STA	(ptrPepChan), Y
 
-;		Channel.VTPhase := 0;
+		LDY	#PEP_CHNDATA::valVtPhs
+		LDA	#$00
+		STA	(ptrPepChan), Y
 
 		JSR	peppitoChanNoteOn
 
@@ -1409,6 +2001,44 @@ peppitoChanTrigger:
 ;-----------------------------------------------------------
 peppitoChanCalcFreq:
 ;-----------------------------------------------------------
+		LDY	#PEP_CHNDATA::valVibAdd
+		LDA	(ptrPepChan), Y
+		STA	valPepTmp1
+
+		BPL	@pos
+
+		LDA	#$FF
+		STA	valPepTmp1 + 1
+
+		JMP	@cont0
+
+@pos:
+		LDA	#$00
+		STA	valPepTmp1 + 1
+
+@cont0:
+		LDY	#PEP_CHNDATA::valPeriod
+		CLC
+		LDA	(ptrPepChan), Y
+		ADC	valPepTmp1
+		STA	valPepTmp1
+		INY
+		LDA	(ptrPepChan), Y
+		ADC	valPepTmp1 + 1
+		STA	valPepTmp1 + 1
+
+		BNE	@cont1
+
+		LDA	valPepTmp1
+		CMP	#$0E
+		BCS	@cont1
+
+		LDA	#<6848
+		STA	valPepTmp1
+		LDA	#>6848
+		STA	valPepTmp1 + 1
+
+@cont1:
 ;	Amiga frequency
 		LDA	#<VAL_FAC_AMIGARATEL
 		STA	$D770
@@ -1419,14 +2049,10 @@ peppitoChanCalcFreq:
 		LDA	#>VAL_FAC_AMIGARATEH
 		STA	$D773
 
-		LDY	#PEP_CHNDATA::valPeriod
-		LDA	(ptrPepChan), Y
+		LDA	valPepTmp1
 		STA	$D774
-		INY
-
-		LDA	(ptrPepChan), Y
+		LDA	valPepTmp1 + 1
 		STA	$D775
-
 		LDA	#$00
 		STA	$D776
 		STA	$D777

@@ -1,7 +1,7 @@
 ;===========================================================
 ;Manche MOD Replayer
 ;
-;Version 0.11A
+;Version 0.12A
 ;Written by Daniel England of Ecclestial Solutions.
 ;
 ;Copyright 2021, Daniel England. All Rights Reserved.
