@@ -1,7 +1,7 @@
 ;===========================================================
 ;Peppito MOD Playback Driver
 ;
-;Version 0.12A
+;Version 0.14A
 ;Written by Daniel England of Ecclestial Solutions.
 ;
 ;Copyright 2021, Daniel England. All Rights Reserved.
@@ -100,7 +100,10 @@ VAL_FAC_M65RATERTH	=	$0001
 		valVibSpd	.byte
 		valVibDep	.byte
 		valFxCnt	.byte
+		valPtnLRow	.byte
 	.endstruct
+
+	.assert	.sizeof(PEP_CHNDATA) < 256, error, "Channel data too large!"
 
 
 adrPepMODL:
@@ -128,7 +131,14 @@ valPepSRst:
 valPepChan:
 	.byte	$00
 
+valPepMaxI:
+	.byte	$00
 valPepMaxP:
+	.byte	$00
+
+cntPepPtnL:
+	.byte	$FF
+valPepPLCh:
 	.byte	$00
 
 valPepTmp0:
@@ -172,6 +182,12 @@ idxPepChn0:
 
 valPepMRg0:
 	.res	8, $00
+
+valPepSig0:
+	.byte	$4D, $2E, $4B, $2E
+	.byte	$4D, $21, $4B, $21
+	.byte	$46, $4C, $54, $34
+	.byte	$46, $4C, $54, $38
 
 valPepSin0:
 	.byte	0,  24,  49,  74,  97, 120, 141, 161
@@ -413,8 +429,71 @@ peppitoInit:
 		LDA	#$00
 		STA	valPepMaxP
 
+		LDA	#$FF
+		STA	cntPepPtnL
+		STA	valPepPLCh
+
+		__PEP_SET_MODF_OFFS ptrPepModF, $0438
+		LDZ	#$00
+		NOP	
+		LDA	(ptrPepModF), Z
+		STA	valPepTmp0
+		INZ
+		NOP	
+		LDA	(ptrPepModF), Z
+		STA	valPepTmp0 + 1
+		INZ
+		NOP	
+		LDA	(ptrPepModF), Z
+		STA	valPepTmp0 + 2
+		INZ
+		NOP	
+		LDA	(ptrPepModF), Z
+		STA	valPepTmp0 + 3
+
+		LDA	#$10
+		STA	valPepMaxI
+
+		LDZ	#$00
+@loop1:
+		LDY	#$00
+		
+		TZA
+		ASL
+		ASL
+		TAX
+
+@loop2:
+		LDA	valPepSig0, X
+		CMP	valPepTmp0, Y
+		BNE	@next1
+
+		INX
+		INY
+		CPY	#$04
+		BNE	@loop2
+
+		LDA	#$20
+		STA	valPepMaxI
+		JMP	@cont1
+
+@next1:
+		INZ
+		CPZ	#$04
+		BNE	@loop1
+
+@cont1:
+		LDA	valPepMaxI
+		CMP	#$10
+		BNE	@ins320
+
+		__PEP_SET_MODF_OFFS ptrPepModF, $01D6
+		JMP	@cont2
+
+@ins320:
 		__PEP_SET_MODF_OFFS ptrPepModF, $03B6
 
+@cont2:
 		LDZ	#$00
 		NOP
 		LDA	(ptrPepModF), Z
@@ -438,8 +517,17 @@ peppitoInit:
 		STA	valPepSRst
 
 @cont0:
+		LDA	valPepMaxI
+		CMP	#$10
+		BNE	@ins321
+
+		__PEP_SET_MODF_OFFS ptrPepModF, $01D8
+		JMP	@cont3
+
+@ins321:
 		__PEP_SET_MODF_OFFS ptrPepMSeq, $03B8
 
+@cont3:
 		LDZ	#$00
 @loop0:
 		NOP
@@ -816,7 +904,7 @@ peppitoReadIns:
 		__PEP_ADD_PTR32_IMM16 ptrPepModF, $001E
 
 		INX
-		CPX	#$20
+		CPX	valPepMaxI
 		LBNE	@loop
 
 
@@ -831,8 +919,17 @@ peppitoReadSeq:
 		LDA	#>adrPepPtn0
 		STA	ptrPepTmpA + 1
 
+		LDA	valPepMaxI
+		CMP	#$10
+		BNE	@ins320
+
+		__PEP_SET_MODF_OFFS ptrPepModF, $0258
+		JMP	@cont0
+
+@ins320:
 		__PEP_SET_MODF_OFFS ptrPepModF, $043C
 
+@cont0:
 		LDZ	#$00
 @loop0:
 		LDY	#$00
@@ -1296,6 +1393,26 @@ peppitoChanTick:
 
 
 @tstnext8:
+		CMP	#$1C
+		BNE	@tstnext9
+
+;	Note Cut -----------------------------------------------
+		LDY	#PEP_CHNDATA::valFxCnt
+		LDA	(ptrPepChan), Y
+		CMP	valPepTmp0 + 1
+		BEQ	@ntct0
+
+		RTS
+
+@ntct0:
+		LDY	#PEP_CHNDATA::valVol
+		LDA	#$00
+		STA	(ptrPepChan), Y
+
+		JSR	peppitoChanUpdVol
+		RTS
+
+@tstnext9:
 
 		RTS
 
@@ -1325,6 +1442,37 @@ pepptioPerformTick:
 		JSR	peppitoChanTick
 
 		PLX
+@next:
+		INX
+		CPX	#$04
+		BNE	@loop1
+
+		RTS
+
+
+;-----------------------------------------------------------
+peppitoClearChanPLRow:
+;-----------------------------------------------------------
+		LDX	#$00
+@loop1:
+;		PHX
+
+		STX	valPepChan
+
+		TXA
+		ASL
+		TAY
+
+		LDA	idxPepChn0, Y
+		STA	ptrPepChan
+		LDA	idxPepChn0 + 1, Y
+		STA	ptrPepChan + 1
+
+		LDY	#PEP_CHNDATA::valPtnLRow
+		LDA	#$00
+		STA	(ptrPepChan), Y
+
+;		PLX
 @next:
 		INX
 		CPX	#$04
@@ -1378,7 +1526,7 @@ peppitoPerformRow:
 		LDA	valPepPBrk
 		STA	cntPepSeqP
 
-;		For Chan := 0 To NumChannels - 1 Do Channels[ Chan ].PLRow := 0;
+		JSR	peppitoClearChanPLRow
 
 		LDA	#$FF
 		STA	valPepPBrk
@@ -1485,24 +1633,53 @@ peppitoPerformRow:
 ;	Effect
 		LDA	valPepTmp0 + 1
 		AND	#$0F
-
-		LDY	#PEP_NOTDATA::valEff
-		STA	(ptrPepTmpA), Y
+		STA	valPepTmp1
 
 ;	Param
 		NOP
 		LDA	(ptrPepPtrn), Z
 		INZ
+		STA	valPepTmp1 + 1
 
-		LDY	#PEP_NOTDATA::valPrm
+		LDA	valPepTmp1
+		CMP	#$0E
+		BNE	@cont2
+
+		LDA	valPepTmp1 + 1
+		LSR
+		LSR
+		LSR
+		LSR
+		ORA	#$10
+		STA	valPepTmp1
+
+		LDA	valPepTmp1 + 1
+		AND	#$0F
+		STA	valPepTmp1 + 1
+
+@cont2:
+		LDA	valPepTmp1
+		BNE	@cont3
+
+		LDA	valPepTmp1 + 1
+		BMI	@cont3
+		BEQ	@cont3
+
+		LDA	#$0E
+		STA	valPepTmp1
+
+@cont3:
+		LDY	#PEP_NOTDATA::valEff
+		LDA	valPepTmp1
 		STA	(ptrPepTmpA), Y
 
-;***FIXME:
-;	effect $0E and $10
+		LDY	#PEP_NOTDATA::valPrm
+		LDA	valPepTmp1 + 1
+		STA	(ptrPepTmpA), Y
 
 		INX
 		CPX	#$04
-		BNE	@loop0
+		LBNE	@loop0
 
 
 		LDX	#$00
@@ -1547,7 +1724,6 @@ peppitoChanRow:
 ;@halt:
 ;		INC	$D020
 ;		JMP	@halt
-
 		LDY	#PEP_NOTDATA::valEff
 		
 		LDA	(ptrPepChan), Y
@@ -1609,16 +1785,20 @@ peppitoChanTrigEffect:
 		BNE	@tstnxt0
 
 ;	Pattern break-------------------------------------------
-;***FIXME:
-;		If PLCount < 0 Then Begin
+		LDA	cntPepPtnL
+		BMI	@pbrk0
+
+		JMP	@exit
+
+@pbrk0:
 		LDA	valPepPBrk
-		BPL	@pbrk0
+		BPL	@pbrk1
 
 		LDX	cntPepSeqP
 		INX
 		STX	valPepPBrk
 
-@pbrk0:
+@pbrk1:
 		LDA	valPepTmp0 + 1
 		LSR
 		LSR
@@ -1773,7 +1953,7 @@ peppitoChanTrigEffect:
 
 @tstnxt8:
 		CMP	#$03
-		BNE	@exit
+		BNE	@tstnxt9
 
 ;	Tone Portamento ----------------------------------------
 
@@ -1787,7 +1967,98 @@ peppitoChanTrigEffect:
 		STA	(ptrPepChan), Y
 
 		JSR	peppitoChanUpdFreq
-		RTS
+		JMP	@exit
+
+@tstnxt9:
+		CMP	#$0B
+		BNE	@tstnxta
+
+;	Pattern Jump -------------------------------------------
+
+		LDA	cntPepPtnL
+		BPL	@exit
+
+		LDA	valPepTmp0 + 1
+		STA	valPepPBrk
+		LDA	#$00
+		STA	valPepNRow
+
+		JMP	@exit
+
+@tstnxta:
+		CMP	#$16
+		BNE	@tstnxtb
+
+;	Pattern Loop -------------------------------------------
+
+		LDY	#PEP_CHNDATA::valPtnLRow
+
+		LDA	valPepTmp0 + 1
+		BNE	@ptnl0
+
+		LDA	cntPepPRow
+		STA	(ptrPepChan), Y
+
+@ptnl0:
+		LDA	(ptrPepChan), Y
+		CMP	cntPepPRow
+		BCS	@exit
+
+		LDA	valPepPBrk
+		BPL	@exit
+
+		LDA	cntPepPtnL
+		BPL	@ptnl1
+
+		LDA	valPepTmp0 + 1
+		STA	cntPepPtnL
+
+		LDA	valPepChan
+		STA	valPepPLCh
+
+@ptnl1:
+		LDA	valPepChan
+		CMP	valPepPLCh
+		BNE	@exit
+
+		LDA	cntPepPtnL
+		BNE	@ptnl2
+
+		LDX	cntPepPRow
+		INX
+		TXA
+		STA	(ptrPepChan), Y
+
+		JMP	@ptnl3
+
+@ptnl2:
+		LDA	(ptrPepChan), Y
+		STA	valPepNRow
+
+@ptnl3:
+		DEC	cntPepPtnL
+
+		JMP	@exit
+
+@tstnxtb:
+		CMP	#$1C
+		BNE	@exit
+
+;	Note Cut -----------------------------------------------
+
+		LDA	valPepTmp0 + 1
+		BMI	@ntct0
+		BEQ	@ntct0
+
+		JMP	@exit
+
+@ntct0:
+		LDY	#PEP_CHNDATA::valVol
+		LDA	#$00
+		STA	(ptrPepChan), Y
+
+		JSR	peppitoChanUpdVol
+		JMP	@exit
 
 @exit:
 		RTS

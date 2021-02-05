@@ -1,5 +1,5 @@
 
-# Manche 0.12A Beta
+# Manche 0.14A Beta
 Copyright 2021, Daniel England.  All Rights Reserved.
 
 ## Introduction
@@ -19,11 +19,9 @@ Manche currently supports NTSC playback adjustments and provides alternate mixin
 
 
 ## Display
-Presently, there is very little to see on the Manche screen.
-
 At the very top is shown the current tick values for Manche and Peppito (including row and sequence counters).
 
-At the very bottom, the current mixer levels are shown.
+At the very bottom, the current mixer levels are shown.  The levels shown are dependent upon the board type.  For Nexys boards, the levels are Master, Right and Left.  For other boards, the levels are Master, Digi Left/Right and Stereo Mix.
 
 The middle area is blank until you load a MOD.  This area is divided into two main columns, with the instrument information on the right and MOD and playback information on the left.
 
@@ -47,8 +45,10 @@ The MOD files must be the original M.K. or M!K! types.
 
 The MOD files must not have instruments with sample lengths greater than 65535 bytes long.
 
-## Peppito Performance
-At present, Peppito only supports the following effects:
+The MOD files must be 31 instrument types.  Support for 15 instrument types is being investigated.
+
+## Peppito's Performance
+Peppito supports the following effects:
   - Pattern Break
   - Set Volume
   - Set Speed
@@ -65,10 +65,13 @@ At present, Peppito only supports the following effects:
   - Tone Portamento + Volume Slide
   - Retrigger
   - Note Delay
+  - Pattern Jump
+  - Pattern Loop
+  - Note Cut
 
-Fine Tune of instruments is now fully supported.
+Fine Tune of instruments is fully supported.
 
-Also, only the fine speed adjustment is supported, not coarse "Tempo" adjustments.  It is unlikely that this will be supported until after other more important enhancements have been made since it requires very specific playback handling.
+Only the fine speed adjustment is supported, not coarse "Tempo" adjustments.  It is unlikely that this will be supported until after other more important enhancements have been made since it requires very specific playback handling.
 
 ## Future Development
 It is vital that more testing be done on Manche and Peppito.

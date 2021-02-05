@@ -1,7 +1,7 @@
 ;===========================================================
 ;Manche MOD Replayer
 ;
-;Version 0.12A
+;Version 0.14A
 ;Written by Daniel England of Ecclestial Solutions.
 ;
 ;Copyright 2021, Daniel England. All Rights Reserved.
@@ -16,9 +16,13 @@
 ;
 ;===========================================================
 
-	.setcpu	"4510"
+	.setcpu		"4510"
 
 	.feature	leading_dot_in_identifiers, loose_string_term
+
+;	Determine whether MOD loading is from D81 or SDC.
+	.define		DEF_MNCH_USEMINI	0
+
 
 numConvLEAD0	=	$C2
 numConvDIGIT	=	$C3
@@ -35,8 +39,12 @@ ADDR_SCREEN		=	$4000
 ADDR_MODFILE	=	$0000
 BANK_MODFILE	=	$0002
 
-	.macro 	.defPStr Arg
-	.byte  	.strlen(Arg), Arg
+ADDR_COLOUR		=	$0000
+BANK_COLOUR		=	$0FF8
+
+
+	.macro	.defPStr Arg
+	.byte	.strlen(Arg), Arg
 	.endmacro
 
 ;-----------------------------------------------------------
@@ -62,6 +70,10 @@ _basNext:
 
 bootstrap:
 		JMP	init
+
+
+PEPPITO:
+	.include	"peppito.s"
 
 
 filename:
@@ -91,7 +103,7 @@ cntMnchNTSC:
 valMnchInst:
 	.byte		$01
 
-valMnchMstVol:
+valMnchMsVol:
 	.word		$FFDC
 valMnchLLVol:
 	.word		$B31A
@@ -102,29 +114,49 @@ valMnchRLVol:
 valMnchRRVol:
 	.word		$B31A
 
+valMnchMsVPc:
+	.byte		100
+valMnchRRVPc:
+	.byte		70
+valMnchRLVPc:
+	.byte		20
+
+valMnchChVIt:
+	.byte		$01, $01, $01, $01
+valMnchChVFd:
+	.byte		$00, $00, $00, $00
+
 
 valMnchDummy:
 	.byte		$00
 
 
+valHexDigit0:
+		.byte	"0", "1", "2", "3", "4", "5", "6", "7"
+		.byte	"8", "9", "A", "B", "C", "D", "E", "F"
 
-lstDMATest:
-;; Screen RAM copy
-	.byte $0A  				; Request format is F018A
-    .byte $80,$00 			; Source MB 
-    .byte $81,$00 			; Destination MB 
-    .byte $00  				; No more options
-    .byte $00 				; copy +  chained
-    .word $8000				; size of copy
-	.word $0000
-	.byte $01 				; source bank
-	.word $0000
-	.byte $01 				; dest bank
-	.word $0000             ; modulo
+valVolSteps0:
+		.byte	12, 12, 8, 8, 6, 6, 3, 3, 3, 2, 1
+
+valMixSteps0:
+		.byte	18, 9, 9, 9, 9, 9, 9, 9, 9, 9, 1
+
+valVolColrs0:
+		.byte	5, 5, 5, 5, 7, 7, 7, 8, 8, 2, 10
 
 
-PEPPITO:
-	.include	"peppito.s"
+;lstDMATest:
+;	.byte $0A				; Request format is F018A
+;	.byte $80,$00			; Source MB 
+;	.byte $81,$00			; Destination MB 
+;	.byte $00				; No more options
+;	.byte $00				; copy +  chained
+;	.word $8000				; size of copy
+;	.word $0000
+;	.byte $01 				; source bank
+;	.word $0000
+;	.byte $01				; dest bank
+;	.word $0000				; modulo
 
 
 ;-----------------------------------------------------------
@@ -154,20 +186,18 @@ init:
 		STX	$D610
 		BNE	@loop0
 
+	.if	.not	DEF_MNCH_USEMINI
 		LDA	#$C0
 		STA	Z:ptrBigglesBufHi
 		LDA	#$03
 		STA	Z:ptrBigglesFNmHi
-
-		LDA	#$00
-		STA	numConvLEAD0
+	.endif
 
 		JSR	initState
 		JSR	initScreen
 		JSR	initAudio
 
 		JSR	initIRQ
-		
 
 		SEI
 		LDA	#$01
@@ -197,11 +227,13 @@ main:
 
 		INC	valMnchInst
 		LDA	valMnchInst
-		CMP	#$20
+		CMP	valPepMaxI
 		LBNE	@update
 
-		LDA	#$1F
-		STA	valMnchInst
+		LDX	valMnchInst
+		DEX
+		STX valMnchInst
+
 		JMP	@update
 
 @tstInsDn:
@@ -299,6 +331,8 @@ main:
 ;-----------------------------------------------------------
 mixerIncRightRight:
 ;-----------------------------------------------------------
+		INC	valMnchRRVPc
+
 		CLC
 		LDA	valMnchRRVol
 		ADC	#$8F
@@ -323,6 +357,9 @@ mixerIncRightRight:
 		STA	valMnchRRVol
 		LDA	#$FF
 		STA	valMnchRRVol + 1
+
+		LDA	#100
+		STA	valMnchRRVPc
 
 @exit:
 		JSR	setRightRVolume
@@ -333,6 +370,8 @@ mixerIncRightRight:
 ;-----------------------------------------------------------
 mixerDecRightRight:
 ;-----------------------------------------------------------
+		DEC	valMnchRRVPc
+
 		SEC
 		LDA	valMnchRRVol
 		SBC	#$8F
@@ -349,6 +388,8 @@ mixerDecRightRight:
 		STA	valMnchRRVol
 		STA	valMnchRRVol + 1
 
+		STA	valMnchRRVPc
+
 @exit:
 		JSR	setRightRVolume
 
@@ -358,6 +399,8 @@ mixerDecRightRight:
 ;-----------------------------------------------------------
 mixerIncRightLeft:
 ;-----------------------------------------------------------
+		INC	valMnchRLVPc
+
 		CLC
 		LDA	valMnchRLVol
 		ADC	#$8F
@@ -383,6 +426,9 @@ mixerIncRightLeft:
 		LDA	#$FF
 		STA	valMnchRLVol + 1
 
+		LDA	#100
+		STA	valMnchRLVPc
+
 @exit:
 		JSR	setRightLVolume
 
@@ -392,6 +438,8 @@ mixerIncRightLeft:
 ;-----------------------------------------------------------
 mixerDecRightLeft:
 ;-----------------------------------------------------------
+		DEC	valMnchRLVPc
+
 		SEC
 		LDA	valMnchRLVol
 		SBC	#$8F
@@ -407,6 +455,9 @@ mixerDecRightLeft:
 		LDA	#$00
 		STA	valMnchRLVol
 		STA	valMnchRLVol + 1
+
+		STA	valMnchRLVPc
+
 
 @exit:
 		JSR	setRightLVolume
@@ -563,30 +614,35 @@ mixerDecLeftLeft:
 ;-----------------------------------------------------------
 mixerIncMaster:
 ;-----------------------------------------------------------
+		INC	valMnchMsVPc
+
 		CLC
-		LDA	valMnchMstVol
+		LDA	valMnchMsVol
 		ADC	#$8F
-		STA	valMnchMstVol
-		LDA	valMnchMstVol + 1
+		STA	valMnchMsVol
+		LDA	valMnchMsVol + 1
 		ADC	#$02
-		STA	valMnchMstVol + 1
+		STA	valMnchMsVol + 1
 		LDA	#$00
 		ADC	#$00
 
 		BNE	@max
 
-		LDA	valMnchMstVol + 1
+		LDA	valMnchMsVol + 1
 		CMP	#$FF
 		BCC	@exit
 		BNE	@max
-		LDA	valMnchMstVol
+		LDA	valMnchMsVol
 		CMP	#$DC
 		BCC	@exit
 @max:
+		LDA	#100
+		STA	valMnchMsVPc
+
 		LDA	#$DC
-		STA	valMnchMstVol
+		STA	valMnchMsVol
 		LDA	#$FF
-		STA	valMnchMstVol + 1
+		STA	valMnchMsVol + 1
 
 @exit:
 		JSR	setMasterVolume
@@ -597,21 +653,25 @@ mixerIncMaster:
 ;-----------------------------------------------------------
 mixerDecMaster:
 ;-----------------------------------------------------------
+		DEC	valMnchMsVPc
+
 		SEC
-		LDA	valMnchMstVol
+		LDA	valMnchMsVol
 		SBC	#$8F
-		STA	valMnchMstVol
-		LDA	valMnchMstVol + 1
+		STA	valMnchMsVol
+		LDA	valMnchMsVol + 1
 		SBC	#$02
-		STA	valMnchMstVol + 1
+		STA	valMnchMsVol + 1
 		LDA	#$00
 		SBC	#$00
 
 		BPL	@exit
 
 		LDA	#$00
-		STA	valMnchMstVol
-		STA	valMnchMstVol + 1
+		STA	valMnchMsVol
+		STA	valMnchMsVol + 1
+
+		STA	valMnchMsVPc
 
 @exit:
 		JSR	setMasterVolume
@@ -622,38 +682,94 @@ mixerDecMaster:
 ;-----------------------------------------------------------
 displayMixerInfo:
 ;-----------------------------------------------------------
-		LDA	#<(ADDR_SCREEN + (15 * 80) + 0)
+		LDA	#<(ADDR_SCREEN + (14 * 80) + 0)
+		STA	ptrScreen
+		LDA	#>(ADDR_SCREEN + (14 * 80) + 0)
+		STA	ptrScreen + 1
+
+		LDA	#$00
+		STA	valMnchDummy
+
+		LDX	#$00
+@loop0:
+		PHX
+
+		LDA	valMnchMsVPc, X
+		STA	ptrTemp
+		LDA	#$00
+		STA	ptrTemp + 1
+
+		LDY	valMnchDummy
+		LDZ	#$00
+		LDA	#$20
+@loop1:
+		STA	(ptrScreen), Y
+		INY
+		INZ
+		CPZ	#$0B
+		BNE	@loop1
+
+		LDY	valMnchDummy
+		LDX	#$00
+
+		LDA	ptrTemp + 1
+@loop2:
+		BMI	@next0
+
+		LDA	ptrTemp
+		BEQ	@next0
+
+		TAZ
+		LDA	#$A0
+		STA	(ptrScreen), Y
+		INY
+		TZA
+
+		SEC
+		LDA	ptrTemp
+		SBC	valMixSteps0, X
+		STA	ptrTemp
+		LDA	ptrTemp + 1
+		SBC	#$00
+		STA	ptrTemp + 1
+		
+		PHA
+		INX
+		PLA
+
+		JMP	@loop2
+
+@next0:
+		CLC
+		LDA	valMnchDummy
+		ADC	#$0C
+		STA	valMnchDummy
+
+		PLX
+		INX
+		CPX	#$03
+		BNE	@loop0
+
+		LDA	#<(ADDR_SCREEN + (15 * 80) + 6)
 		STA	numConvHeapPtr
-		LDA	#>(ADDR_SCREEN + (15 * 80) + 0)
+		LDA	#>(ADDR_SCREEN + (15 * 80) + 6)
 		STA	numConvHeapPtr + 1
 
-		LDA	valMnchMstVol
+		LDA	valMnchMsVPc
 		STA	numConvVALUE
-		LDA	valMnchMstVol + 1
+		LDA	#$00
 		STA	numConvVALUE + 1
 		
 		JSR	numConvPRTINT
 
-		LDA	#<(ADDR_SCREEN + (15 * 80) + 10)
+		LDA	#<(ADDR_SCREEN + (15 * 80) + 18)
 		STA	numConvHeapPtr
-		LDA	#>(ADDR_SCREEN + (15 * 80) + 10)
+		LDA	#>(ADDR_SCREEN + (15 * 80) + 18)
 		STA	numConvHeapPtr + 1
 
-		LDA	valMnchLLVol
+		LDA	valMnchRRVPc
 		STA	numConvVALUE
-		LDA	valMnchLLVol + 1
-		STA	numConvVALUE + 1
-		
-		JSR	numConvPRTINT
-
-		LDA	#<(ADDR_SCREEN + (15 * 80) + 20)
-		STA	numConvHeapPtr
-		LDA	#>(ADDR_SCREEN + (15 * 80) + 20)
-		STA	numConvHeapPtr + 1
-
-		LDA	valMnchLRVol
-		STA	numConvVALUE
-		LDA	valMnchLRVol + 1
+		LDA	#$00
 		STA	numConvVALUE + 1
 		
 		JSR	numConvPRTINT
@@ -663,21 +779,9 @@ displayMixerInfo:
 		LDA	#>(ADDR_SCREEN + (15 * 80) + 30)
 		STA	numConvHeapPtr + 1
 
-		LDA	valMnchRRVol
+		LDA	valMnchRLVPc
 		STA	numConvVALUE
-		LDA	valMnchRRVol + 1
-		STA	numConvVALUE + 1
-		
-		JSR	numConvPRTINT
-
-		LDA	#<(ADDR_SCREEN + (15 * 80) + 40)
-		STA	numConvHeapPtr
-		LDA	#>(ADDR_SCREEN + (15 * 80) + 40)
-		STA	numConvHeapPtr + 1
-
-		LDA	valMnchRLVol
-		STA	numConvVALUE
-		LDA	valMnchRLVol + 1
+		LDA	#$00
 		STA	numConvVALUE + 1
 		
 		JSR	numConvPRTINT
@@ -740,9 +844,9 @@ displayInstInfo:
 		CPZ	#$16
 		BNE	@loop
 
-		LDA	#<(ADDR_SCREEN + (3 * 80) + 50)
+		LDA	#<(ADDR_SCREEN + (3 * 80) + 60)
 		STA	numConvHeapPtr
-		LDA	#>(ADDR_SCREEN + (3 * 80) + 50)
+		LDA	#>(ADDR_SCREEN + (3 * 80) + 60)
 		STA	numConvHeapPtr + 1
 
 		LDY	#PEP_INSDATA::valVol
@@ -753,9 +857,9 @@ displayInstInfo:
 
 		JSR	numConvPRTINT
 
-		LDA	#<(ADDR_SCREEN + (3 * 80) + 60)
+		LDA	#<(ADDR_SCREEN + (3 * 80) + 70)
 		STA	numConvHeapPtr
-		LDA	#>(ADDR_SCREEN + (3 * 80) + 60)
+		LDA	#>(ADDR_SCREEN + (3 * 80) + 70)
 		STA	numConvHeapPtr + 1
 
 		LDY	#PEP_INSDATA::valFTune
@@ -845,13 +949,131 @@ displaySongInfo:
 
 
 ;-----------------------------------------------------------
+displayCurrVol:
+;-----------------------------------------------------------
+		LDA	#<(ADDR_SCREEN + (6 * 80) + 0)
+		STA	ptrScreen
+		LDA	#>(ADDR_SCREEN + (6 * 80) + 0)
+		STA	ptrScreen + 1
+
+		LDA	#$00
+		STA	valMnchDummy
+
+		LDX	#$00
+@loop0:
+		PHX
+
+		TXA
+		ASL
+		TAX
+
+		LDA	idxPepChn0, X
+		STA	ptrTemp
+		LDA	idxPepChn0 + 1, X
+		STA	ptrTemp + 1
+
+		LDY	valMnchDummy
+		LDZ	#$00
+		LDA	#$20
+@loop1:
+		STA	(ptrScreen), Y
+		INY
+		INZ
+		CPZ	#$0C
+		BNE	@loop1
+
+		PLX
+		PHX
+
+		LDY	#PEP_NOTDATA::valKey
+		LDA	(ptrTemp), Y
+		INY
+		ORA	(ptrTemp), Y
+
+		BNE	@cont0
+
+		LDA	#$02
+		STA	valMnchChVIt, X
+
+		LDY	#PEP_CHNDATA::valVol
+		LDA	(ptrTemp), Y
+
+;		LSR
+		STA	valMnchChVFd, X
+
+		JMP	@cont1
+
+@cont0:
+		LDY	#PEP_CHNDATA::valVol
+		LDA	(ptrTemp), Y
+		STA	valMnchChVFd, X
+
+		LDA	valMnchChVIt, X
+		BEQ	@cont1
+
+		SEC
+		LDA	valMnchChVIt, X
+		SBC	#$01
+		STA	valMnchChVIt, X
+
+		LDA	valMnchChVFd, X
+		LSR
+		STA	valMnchChVFd, X
+
+;		JMP	@next0
+
+@cont1:
+;		LDY	#PEP_CHNDATA::valVol
+;		LDA	(ptrTemp), Y
+		LDA	valMnchChVFd, X
+
+		PHA
+		LDY	valMnchDummy
+		LDX	#$00
+		PLA
+@loop2:
+		BEQ	@next0
+		BMI	@next0
+
+		TAZ
+		LDA	#$A0
+		STA	(ptrScreen), Y
+		INY
+		TZA
+		SEC
+		SBC	valVolSteps0, X
+		
+		PHA
+		INX
+		PLA
+
+		JMP	@loop2
+
+@next0:
+		CLC
+		LDA	valMnchDummy
+		ADC	#$0C
+		STA	valMnchDummy
+
+		PLX
+		INX
+		CPX	#$04
+		LBNE	@loop0
+
+		RTS
+
+
+;-----------------------------------------------------------
 displayCurrRow:
 ;	Only call when IRQ can't be called (eg from IRQ handler)
 ;-----------------------------------------------------------
-		LDA	#<(ADDR_SCREEN + (4 * 80) + 0)
-		STA	numConvHeapPtr
-		LDA	#>(ADDR_SCREEN + (4 * 80) + 0)
-		STA	numConvHeapPtr + 1
+		LDA	#<(ADDR_SCREEN + (8 * 80) + 0)
+		STA	ptrScreen
+		LDA	#>(ADDR_SCREEN + (8 * 80) + 0)
+		STA	ptrScreen + 1
+
+		LDA	#$00
+		STA	valMnchDummy
 
 		LDX	#$00
 @loop0:
@@ -873,59 +1095,59 @@ displayCurrRow:
 		STA	numConvVALUE
 
 		LDA	(ptrTemp), Y
-		INY
 		STA	numConvVALUE + 1
 
-		JSR	numConvPRTINT
+		LDY	valMnchDummy
+		LDA	numConvVALUE + 1
+		AND	#$0F
+		JSR	outputHexNybble
 
-		__PEP_ADD_PTR16_IMM16 numConvHeapPtr, $000A
+		LDA	numConvVALUE
+		JSR	outputHexByte
+
+		LDA	#':'
+		STA	(ptrScreen), Y
+		INY
+
+		STY	valMnchDummy
 
 ;	Note instrument
+		LDY	#PEP_NOTDATA::valIns
 		LDA	(ptrTemp), Y
-		INY
 		STA	numConvVALUE
-		LDA	#$00
-		STA	numConvVALUE + 1
 
-		JSR	numConvPRTINT
+		LDY	valMnchDummy
+		LDA	numConvVALUE
+		JSR	outputHexByte
 
-		__PEP_ADD_PTR16_IMM16 numConvHeapPtr, $000A
+		LDA	#':'
+		STA	(ptrScreen), Y
+		INY
+
+		STY	valMnchDummy
 
 ;	Note effect
+		LDY	#PEP_NOTDATA::valEff
 		LDA	(ptrTemp), Y
-		INY
 		STA	numConvVALUE
-		LDA	#$00
-		STA	numConvVALUE + 1
 
-		JSR	numConvPRTINT
+		LDY	valMnchDummy
+		LDA	numConvVALUE
+		JSR	outputHexByte
 
-		__PEP_ADD_PTR16_IMM16 numConvHeapPtr, $000A
+		STY	valMnchDummy
 
 ;	Note param
+		LDY	#PEP_NOTDATA::valPrm
 		LDA	(ptrTemp), Y
-		INY
 		STA	numConvVALUE
-		LDA	#$00
-		STA	numConvVALUE + 1
 
-		JSR	numConvPRTINT
+		LDY	valMnchDummy
+		LDA	numConvVALUE
+		JSR	outputHexByte
 
-		__PEP_ADD_PTR16_IMM16 numConvHeapPtr, $000A
-
-;	Selected volume
-		LDY	#PEP_CHNDATA::valVol
-		LDA	(ptrTemp), Y
 		INY
-		STA	numConvVALUE
-		LDA	#$00
-		STA	numConvVALUE + 1
-
-		JSR	numConvPRTINT
-
-		__PEP_ADD_PTR16_IMM16 numConvHeapPtr, $0028
-
-
+		STY	valMnchDummy
 
 		PLX
 		INX
@@ -1000,6 +1222,9 @@ loadModule:
 		STA	flgMnchPlay
 
 		CLI
+
+		LDA	#$01
+		STA	valMnchInst
 
 		LDA	filename
 		STA	valMnchDummy
@@ -1113,6 +1338,18 @@ loadModule:
 ;		LDX	#<(filename + 1)
 ;		LDY	#>(filename + 1)
 
+	.if	DEF_MNCH_USEMINI
+		LDA	filename
+		LDX	#<(filename + 1)
+		LDY	#>(filename + 1)
+
+		JSR	miniSetFileName
+
+		LDA	#VAL_DOSFTYPE_SEQ 
+		JSR	miniSetFileType
+
+		JSR	miniOpenFile
+	.else
 		LDY	filename
 		INY
 		LDA	#$00
@@ -1128,10 +1365,9 @@ loadModule:
 		LDA	#$20
 		STA	filename, Y
 
-;		LDA	#VAL_DOSFTYPE_SEQ 
-;		JSR	miniSetFileType
-		
 		JSR	bigglesOpenFile
+	.endif
+
 		BCC	@cont1
 
 		JSR	error
@@ -1157,7 +1393,11 @@ loadModule:
 
 		LDZ	#$00
 @loop:
+	.if	DEF_MNCH_USEMINI
+		JSR	miniReadByte
+	.else
 		JSR	bigglesReadByte
+	.endif
 		BCS	@done
 
 		NOP
@@ -1185,7 +1425,11 @@ loadModule:
 		JMP	@loop
 
 @done:
+	.if	DEF_MNCH_USEMINI
+		JSR	miniCloseFile
+	.else
 		JSR	bigglesCloseFile
+	.endif
 
 		LDA	#$00
 		STA	$D020
@@ -1314,7 +1558,7 @@ plyrIRQ:
 ;		STA	$D020
 
 
-		LDA	#<ADDR_SCREEN + 10
+		LDA	#<ADDR_SCREEN + 8
 		STA	numConvHeapPtr 
 		LDA	#>ADDR_SCREEN
 		STA	numConvHeapPtr + 1
@@ -1326,7 +1570,7 @@ plyrIRQ:
 		
 		JSR	numConvPRTINT
 
-		LDA	#<ADDR_SCREEN  + 20
+		LDA	#<ADDR_SCREEN  + 16
 		STA	numConvHeapPtr
 		LDA	#>ADDR_SCREEN
 		STA	numConvHeapPtr + 1
@@ -1338,7 +1582,7 @@ plyrIRQ:
 		
 		JSR	numConvPRTINT
 
-		LDA	#<ADDR_SCREEN + 30
+		LDA	#<ADDR_SCREEN + 24
 		STA	numConvHeapPtr 
 		LDA	#>ADDR_SCREEN
 		STA	numConvHeapPtr + 1
@@ -1350,12 +1594,16 @@ plyrIRQ:
 		
 		JSR	numConvPRTINT
 
+		LDA	flgMnchDirty
+		BEQ	@skip1
+
 		JSR	displayMixerInfo
 
+@skip1:
 		LDA	flgMnchLoad
 		BEQ	@finish
 
-		LDA	#<ADDR_SCREEN + 40
+		LDA	#<ADDR_SCREEN + 32
 		STA	numConvHeapPtr 
 		LDA	#>ADDR_SCREEN
 		STA	numConvHeapPtr + 1
@@ -1367,7 +1615,7 @@ plyrIRQ:
 		
 		JSR	numConvPRTINT
 
-		LDA	#<ADDR_SCREEN + 50
+		LDA	#<ADDR_SCREEN + 40
 		STA	numConvHeapPtr 
 		LDA	#>ADDR_SCREEN
 		STA	numConvHeapPtr + 1
@@ -1379,6 +1627,7 @@ plyrIRQ:
 		
 		JSR	numConvPRTINT
 
+		JSR	displayCurrVol
 		JSR	displayCurrRow
 
 		LDA	flgMnchDirty
@@ -1431,15 +1680,15 @@ charASCIIToScreen:
 		RTS
 
 @next0:
-		CMP	#$40
-		BCC	@next1
-		CMP	#$61
-		BCS	@next1
-
-		SEC
-		SBC	#$40
-		RTS
-
+;		CMP	#$40
+;		BCC	@next1
+;		CMP	#$61
+;		BCS	@next1
+;
+;		SEC
+;		SBC	#$40
+;		RTS
+;
 @next1:
 		CMP	#$60
 		BCC	@next2
@@ -1451,6 +1700,43 @@ charASCIIToScreen:
 		RTS
 
 @next2:
+		RTS
+
+
+
+;-----------------------------------------------------------
+outputHexNybble:
+;-----------------------------------------------------------
+		PHX
+		TAX
+		LDA	valHexDigit0, X
+		JSR	charASCIIToScreen
+
+		STA	(ptrScreen), Y
+		INY
+
+		PLX
+
+		RTS
+
+
+;-----------------------------------------------------------
+outputHexByte:
+;-----------------------------------------------------------
+		PHA
+		
+		LSR
+		LSR
+		LSR
+		LSR
+
+		JSR	outputHexNybble
+
+		PLA
+		AND	#$0F
+
+		JSR	outputHexNybble
+
 		RTS
 
 
@@ -1684,43 +1970,43 @@ setMasterVolume:
 		
 @cont0:
 		LDX	#$1E				;Speaker Left master 
-		LDA	valMnchMstVol
+		LDA	valMnchMsVol
 		ORA	valMnchDummy
 
 		JSR	setCoefficient
 
 		LDX	#$1F
-		LDA	valMnchMstVol + 1
+		LDA	valMnchMsVol + 1
 		JSR	setCoefficient
 
 		LDX	#$3E				;Speaker right master
-		LDA	valMnchMstVol
+		LDA	valMnchMsVol
 		ORA	valMnchDummy
 
 		JSR	setCoefficient
 
 		LDX	#$3F
-		LDA	valMnchMstVol + 1
+		LDA	valMnchMsVol + 1
 		JSR	setCoefficient
 
 		LDX	#$DE				;Headphones right? master
-		LDA	valMnchMstVol
+		LDA	valMnchMsVol
 		ORA	valMnchDummy
 
 		JSR	setCoefficient
 
 		LDX	#$DF
-		LDA	valMnchMstVol + 1
+		LDA	valMnchMsVol + 1
 		JSR	setCoefficient
 
 		LDX	#$FE				;Headphones left? master
-		LDA	valMnchMstVol
+		LDA	valMnchMsVol
 		ORA	valMnchDummy
 
 		JSR	setCoefficient
 
 		LDX	#$FF
-		LDA	valMnchMstVol + 1
+		LDA	valMnchMsVol + 1
 		JSR	setCoefficient
 
 		RTS
@@ -1925,13 +2211,13 @@ initScreen:
 		DEX
 		BPL	@loop0
 
-
-		LDA	#$00
+		LDA	#<ADDR_COLOUR
 		STA	ptrScreen
+		LDA	#>ADDR_COLOUR
 		STA	ptrScreen + 1
-		LDA	#$F8
+		LDA	#<BANK_COLOUR
 		STA	ptrScreen + 2
-		LDA	#$0F
+		LDA	#>BANK_COLOUR
 		STA	ptrScreen + 3
 
 		LDX	#$18
@@ -1956,6 +2242,61 @@ initScreen:
 		
 		DEX
 		BPL	@loop2
+
+		LDA	#<(ADDR_COLOUR + (6 * 80))
+		STA	ptrScreen
+		LDA	#>(ADDR_COLOUR + (6 * 80))
+		STA	ptrScreen + 1
+		LDA	#<BANK_COLOUR
+		STA	ptrScreen + 2
+		LDA	#>BANK_COLOUR
+		STA	ptrScreen + 3
+
+		LDZ	#$00
+		LDY	#$00
+@loop4:
+		LDX	#$00
+@loop5:
+		LDA	valVolColrs0, X
+		NOP
+		STA	(ptrScreen), Z
+		INZ
+		INX
+		CPX	#$0B
+		BNE	@loop5
+
+		INZ
+		INY
+		CPY	#$04
+		BNE	@loop4
+
+		LDA	#<(ADDR_COLOUR + (14 * 80))
+		STA	ptrScreen
+		LDA	#>(ADDR_COLOUR + (14 * 80))
+		STA	ptrScreen + 1
+		LDA	#<BANK_COLOUR
+		STA	ptrScreen + 2
+		LDA	#>BANK_COLOUR
+		STA	ptrScreen + 3
+
+		LDZ	#$00
+		LDY	#$00
+@loop6:
+		LDX	#$00
+@loop7:
+		LDA	valVolColrs0, X
+		NOP
+		STA	(ptrScreen), Z
+		INZ
+		INX
+		CPX	#$0B
+		BNE	@loop7
+
+		INZ
+		INY
+		CPY	#$03
+		BNE	@loop6
+
 
 		RTS
 
@@ -1983,5 +2324,8 @@ initM65IOFast:
 		
 		RTS
 
-;	.include	"minime.s"
+	.if	DEF_MNCH_USEMINI
+	.include	"minime.s"
+	.else
 	.include	"bigglesworth.s"
+	.endif
