@@ -1,7 +1,7 @@
 ;===========================================================
 ;Peppito MOD Playback Driver
 ;
-;Version 0.14A
+;Version 0.16A
 ;Written by Daniel England of Ecclestial Solutions.
 ;
 ;Copyright 2021, Daniel England. All Rights Reserved.
@@ -16,8 +16,10 @@
 ;
 ;===========================================================
 
+.define	DEF_PEP_SHOWRASTER	1
+
 ;-----------------------------------------------------------
-TBL_PPTO_JUMP:
+TBL_PEP_JUMP:
 	JMP	peppitoInit				;+0
 	JMP	peppitoPlay				;+3
 	JMP	peppitoNOP				;+6
@@ -27,6 +29,7 @@ TBL_PPTO_JUMP:
 
 ptrPepTmpA	=	$A0
 ptrPepChan	=	$A2
+flgPepRsrt	=	$A4
 
 ptrPepModF	=	$B0
 ptrPepMSeq	=	$B4
@@ -152,10 +155,15 @@ valPepTmp3:
 valPepTmp4:
 	.word	$0000
 
+	.if	DEF_PEP_SHOWRASTER
+valPepRstr:
+	.byte	$00
+	.endif
+
+
 adrPepPtn0:
 	.repeat	128
-	.word	$0000
-	.word	$0000
+	.dword	$00000000
 	.endrepeat
 
 recPepIns0:
@@ -557,6 +565,14 @@ peppitoInit:
 ;-----------------------------------------------------------
 peppitoPlay:
 ;-----------------------------------------------------------
+	.if	DEF_PEP_SHOWRASTER
+		LDA	$D020
+		STA	valPepRstr
+
+		LDA	#$06
+		STA	$D020
+	.endif
+
 		JSR	peppitoSaveState
 
 		DEC	cntPepTick
@@ -569,10 +585,20 @@ peppitoPlay:
 		JMP	@exit
 
 @procTick:
+	.if	DEF_PEP_SHOWRASTER
+		LDA	#$03
+		STA	$D020
+	.endif
+
 		JSR	pepptioPerformTick
 
 @exit:
 		JSR	peppitoRestoreState
+
+	.if	DEF_PEP_SHOWRASTER
+		LDA	valPepRstr
+		STA	$D020
+	.endif
 
 		RTS
 
@@ -1484,6 +1510,9 @@ peppitoClearChanPLRow:
 ;-----------------------------------------------------------
 peppitoPerformRow:
 ;-----------------------------------------------------------
+		LDA	#$00
+		STA	flgPepRsrt
+
 		LDA	valPepNRow
 		BPL	@cont0
 
@@ -1515,9 +1544,8 @@ peppitoPerformRow:
 		JMP	@skip0
 
 @restart:
-
-;***FIXME:
-;	Do we restart or do we end??
+		LDA	#$01
+		STA	flgPepRsrt
 
 		LDA	valPepSRst
 		STA	valPepPBrk
@@ -1746,6 +1774,11 @@ peppitoChanRow:
 		JSR	peppitoChanTrigger
 
 @update:
+	.if	DEF_PEP_SHOWRASTER
+		LDA	#$0E
+		STA	$D020
+	.endif
+
 		JSR	peppitoChanTrigEffect
 
 		RTS

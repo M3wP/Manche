@@ -7,7 +7,10 @@ Welcome to the Manche readme!
 
 Manche is a front-end for the Peppito MOD player and allows you to play (or "replay" in the original parlance) MOD files on your MEGA65.
 
-At the moment, Manche and Peppito are in early development stages.  It is intended on making Manche a full MED (MOD EDitor) or "Trakker" and to add more MOD type and effect type support to Peppito as well as various other enhancements.
+Manche and Peppito have advanced in functionaliy and now support most of the intended features.
+
+Please read the other sections for updated information!
+
 
 ## License
 Manche and Peppito are released under the terms of the LGPL.
@@ -37,6 +40,11 @@ To control the master volume, use F9 and F10.
 To control the volume of the standard left/right outputs (or just right on the Nexys) use F11/F12.
 
 To control the mix level of the alternate left/rights outputs for changing the "stereo width" (or just the left channel level on the Nexys) use F13/F14. 
+
+Manche for the SDC (as opposed to the FDC/D81 version) now supports jukebox mode!  Instead of simply loading a file, you can press F3 to load a directory listing of MOD files from your SD card and play them in the order given there.  Alternatively, you can press F4 to start jukebox shuffle mode where the order of files is randomised.
+
+In jukebox mode, you may press F5 to skip to the next track.
+
 
 ## Limitations
 The MOD files must be no larger than 256kB (262144 bytes).

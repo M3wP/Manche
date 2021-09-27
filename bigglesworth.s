@@ -1,7 +1,7 @@
 ;===========================================================
 ;biggleswoth simplified SD card DOS replacement for MEGA65
 ;
-;Version 0.10A
+;Version 0.14A
 ;Written by Daniel England of Ecclestial Solutions.
 ;
 ;Copyright 2021, Daniel England. All Rights Reserved.
@@ -11,8 +11,9 @@
 ;A simple DOS replacement library.  Use bigglesSetFileName
 ;to describe your file and bigglesOpenFile to open it.
 ;
-;You must put the pages to use for the read buffer and file
-;name into ptrBigglesBufHi and ptrBigglesFNmHi, respectively.
+;You must put the pages to use for the disk read buffer and
+;file name transfer buffer into ptrBigglesBufHi and 
+;ptrBigglesXfrHi, respectively.
 ;
 ;Supports only character reads but block reads will be added
 ;in the future.  Read a byte with bigglesReadByte.
@@ -26,8 +27,15 @@
 
 
 ptrBigglesBufHi	=	$DE
-ptrBigglesFNmHi	=	$DF
+
+ptrBigglesFNmHi	=	$DF		;deprecated
+ptrBigglesXfrHi	=	$DF
+
+
 ptrBigglesBufOff=	$E2
+ptrBigglesBufDir=	$E4
+ptrBigglesBufFNm=	$E6
+valBigglesFType =	$E8
 
 
 ;-----------------------------------------------------------
@@ -50,7 +58,7 @@ bigglesSetFileName:
 		STX	ptrBigglesBufOff
 		STY	ptrBigglesBufOff + 1
 
-		LDA	ptrBigglesFNmHi
+		LDA	ptrBigglesXfrHi
 		STA	@nmsta + 2
 
 		LDY	#$00
@@ -63,7 +71,7 @@ bigglesSetFileName:
 		BNE	@NameCopyLoop
 
 		LDX	#$00
-		LDY	ptrBigglesFNmHi
+		LDY	ptrBigglesXfrHi
 
 		JSR	_bigglesSetFN
 
@@ -108,6 +116,173 @@ bigglesReadByte:
 		PLZ
 		PLY
 		PLX
+
+		RTS
+
+
+
+	;; closedir takes file descriptor as argument (appears in A)
+;-----------------------------------------------------------
+bigglesCloseDir:
+;-----------------------------------------------------------
+		PHX
+
+		TAX
+		LDA	#$16
+		STA	$D640
+		NOP
+
+;		LDX	#$00
+		PLX
+
+		RTS
+	
+	;; Opendir takes no arguments and returns File descriptor in A
+;-----------------------------------------------------------
+bigglesOpenDir:
+;-----------------------------------------------------------
+;		LDX	#$00
+;		LDY	#$00
+;		LDZ	#$00
+;
+;		LDY	ptrBigglesBufHi
+;		LDX	#$00
+
+		LDA	#$12
+		STA	$D640
+		NOP
+
+;		LDX	#$00
+		
+		RTS
+
+
+	;; readdir takes the file descriptor returned by opendir as argument
+	;; and gets a pointer to a MEGA65 DOS dirent structure.
+	;; Again, the annoyance of the MEGA65 Hypervisor requiring a page aligned
+	;; transfer area is a nuisance here. We will use $0400-$04FF, and then
+	;; copy the result into a regular C dirent structure
+	;;
+	;; d_ino = first cluster of file
+	;; d_off = offset of directory entry in cluster
+	;; d_reclen = size of the dirent on disk (32 bytes)
+	;; d_type = file/directory type
+	;; d_name = name of file
+;-----------------------------------------------------------
+bigglesReadDir:
+;-----------------------------------------------------------
+		PHX
+		PHY
+		PHZ
+
+		PHA
+	
+;;	FIRST, CLEAR OUT THE DIRENT
+;		LDX	#0
+;		TXA
+;@l1:
+;		STA	_readdir_dirent, X
+;		DEX
+;		BNE	@l1
+
+;@halt0:
+;		LDA	#$0E
+;		STA	$D020
+;		JMP	@halt0
+;		LDA	#$00
+;		STA	$D020
+
+;	Third, call the hypervisor trap
+;	File descriptor gets passed in in X.
+;	Result gets written to transfer area we setup 
+		PLX
+		LDY	ptrBigglesXfrHi
+		LDA	#$14
+		STA	$D640
+		NOP
+
+		BCS	@readDirSuccess
+
+;	Return end of directory
+;		LDA #$00
+;		LDX #$00
+
+		PLZ
+		PLY
+		PLX
+
+		SEC
+
+		RTS
+
+@readDirSuccess:
+		LDA	#$00
+		STA	ptrBigglesBufDir
+		LDA	ptrBigglesXfrHi
+		STA	ptrBigglesBufDir + 1
+
+		LDA	#$00
+		STA	ptrBigglesBufFNm
+		LDA	ptrBigglesBufHi
+		STA	ptrBigglesBufFNm + 1
+
+;	Copy file name
+		LDY	#$3F
+@l2:
+		LDA	(ptrBigglesBufDir), Y
+		STA	(ptrBigglesBufFNm), Y
+
+		DEY
+		BPL	@l2
+
+
+;	make sure it is null terminated
+;	ldx $0400+64
+;	lda #$00
+;	sta _readdir_dirent+4+2+4+2,x
+		LDY	#64
+		LDA	(ptrBigglesBufDir), Y
+		TAY
+		LDA	#$00
+		STA	(ptrBigglesBufFNm), Y
+
+
+;	;; Inode = cluster from offset 64+1+12 = 77
+;	ldx #$03
+;@l3:	
+;	lda $0477,x
+;	sta _readdir_dirent+0,x
+;	dex
+;	bpl @l3
+;
+;	;; d_off stays zero as it is not meaningful here
+;	
+;	;; d_reclen we preload with the length of the file (this saves calling stat() on the MEGA65)
+;	ldx #3
+;@l4:	
+;	lda $0400+64+1+12+4,x
+;	sta _readdir_dirent+4+2,x
+;	dex
+;	bpl @l4
+
+;	File type and attributes
+;	lda $0400+64+1+12+4+4
+;	sta _readdir_dirent+4+2+4
+
+		LDY	#64 + 1 + 12 + 4 + 4
+		LDA	(ptrBigglesBufDir), Y
+		STA	valBigglesFType
+
+
+;	Return address of dirent structure
+;	lda #<_readdir_dirent
+;	ldx #>_readdir_dirent
+	
+		PLZ
+		PLY
+		PLX
+
+		CLC
 
 		RTS
 
@@ -169,6 +344,8 @@ _bigglesOpenFile:
 
 		LDA	#$00
 		STA	flgBigglesErr
+		STA	sizBigglesBuf
+		STA	sizBigglesBuf + 1
 
 		CLC
 
@@ -228,7 +405,7 @@ _bigglesReadByte:
 		SBC	#$01
 		STA	sizBigglesBuf
 		LDA	sizBigglesBuf + 1
-		SBC	#$01
+		SBC	#$00
 		STA	sizBigglesBuf + 1
 
 		PLA
@@ -259,7 +436,7 @@ _bigglesReadSect:
 		STX	sizBigglesBuf
 		STY	sizBigglesBuf + 1
 
-		LDA sizBigglesBuf
+		LDA	sizBigglesBuf
 		ORA	sizBigglesBuf + 1
 
 		BEQ	@exit
