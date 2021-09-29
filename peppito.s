@@ -569,7 +569,7 @@ peppitoPlay:
 		LDA	$D020
 		STA	valPepRstr
 
-		LDA	#$06
+		LDA	#$01
 		STA	$D020
 	.endif
 
@@ -586,7 +586,7 @@ peppitoPlay:
 
 @procTick:
 	.if	DEF_PEP_SHOWRASTER
-		LDA	#$03
+		LDA	#$04
 		STA	$D020
 	.endif
 
