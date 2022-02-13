@@ -480,34 +480,36 @@ _miniGetFileEntry:
 ;-----------------------------------------------------------
 _miniFindFile:
 ;-----------------------------------------------------------
-		LDA	#$28
-		STA	datNextTrk
-		LDA	#$00
-		STA	datNextSec
-		
-		JSR	_miniReadNextSector
-		BCS	@error
+		LDA	#$28							;|OPENDIR
+		STA	datNextTrk						;|
+		LDA	#$00							;|
+		STA	datNextSec						;|
+											;|
+		JSR	_miniReadNextSector				;|
+		BCS	@error							;|
+											;|
+		JSR	_miniReadByte					;|
+		STA	datNextTrk						;|
+											;|
+		JSR	_miniReadByte					;|
+		STA	datNextSec						;|
 
-		JSR	_miniReadByte
-		STA	datNextTrk
-		
-		JSR	_miniReadByte
-		STA	datNextSec
 
-@loop0:
-;	Get directory list sector
-		JSR	_miniReadNextSector
-		BCS	@error
+@loop0:										;|FINDNEXTDIRTRK
+;	Get directory list sector				;|
+		JSR	_miniReadNextSector				;|
+		BCS	@error							;|
+											;|
+		LDX	#$00							;|
+		STX	datNextTrk						;|
+		STX	datNextSec						;|
+											;|
+		STX	datEntryCntr					;|
 
-		LDX	#$00
-		STX	datNextTrk
-		STX	datNextSec
 
-		STX	datEntryCntr
+@loop1:										;|READDIR
+		JSR	_miniGetFileEntry				;|
 
-@loop1:
-		JSR	_miniGetFileEntry
-		
 		LDY	#$00
 		LDA	arrEntryBuf, Y
 		BEQ	@skipt
@@ -565,9 +567,9 @@ _miniFindFile:
 		INC	datEntryCntr
 		LDA	datEntryCntr
 		CMP	#$08
-		LBNE @loop1
+		LBNE @loop1							;|Normal exit
 		
-		LDA	datNextTrk
+		LDA	datNextTrk						;|Call FINDNEXTDIRTRK
 		BNE	@loop0
 		
 @error:
