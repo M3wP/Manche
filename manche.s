@@ -48,8 +48,8 @@ ADDR_SCREEN		=	$4000
 
 ADDR_TEXTURE	=	$5000
 
-AD32_MODFILE	=	$00020000
-AD32_COLOUR		=	$0FF80000
+AD32_MODFILE	=	$00010000
+AD32_COLOUR		=	$0FF80800
 
 ADDR_DATABUF	=	$C000
 ADDR_INPBUF		=	$0300
@@ -144,6 +144,13 @@ filename:
 	.byte		$00
 	.res		64, $20
 	.byte		$00
+
+dirname:
+;	.defPStr	""
+	.byte		$00
+	.res		64, $20
+	.byte		$00
+
 
 errStr:
 	.defPStr	"ERROR OPENING FILE!"
@@ -278,28 +285,17 @@ init:
 		STA	Z:ptrBigglesBufHi
 		LDA	#>ADDR_INPBUF
 		STA	Z:ptrBigglesXfrHi
+
+		JSR	changeDirectory
 	.endif
 
+		JSR	initState
 
-;	Make the memory area pretty for debugging
-		LDA	#$00
-		LDX	#$00
-@loop1:
-		STA	ADDR_DIRFPTRS, X
-		STA	ADDR_DIRFPTRS + $0100, X
-		STA	ADDR_DIRFPTRS + $0200, X
-		STA	ADDR_DIRFPTRS + $0300, X
-		STA	ADDR_DIRFPTRS + $0400, X
-		STA	ADDR_DIRFPTRS + $0500, X
-		STA	ADDR_DIRFPTRS + $0600, X
-		INX
-		BNE	@loop1
-
+		JSR	initMemory
 
 		JSR	initTexture
 		JSR	initScreen
 
-		JSR	initState
 		JSR	initAudio
 
 		JSR	initIRQ
@@ -372,15 +368,37 @@ main:
 
 @testf1:
 		CMP	#$F1
-		BNE	@testspc
+		BNE	@testf2
 
 		LDA	#$00
 		STA	flgMnchJukeB
 
 		JSR	inputModule
+
+		JSR	testModule
+		LBCS	@update
+
+@doload:
 		JSR	loadModule
 
 		JMP	@update
+
+@testf2:
+		CMP	#$F2
+		BNE	@testspc
+
+	.if	.not	DEF_MNCH_USEMINI
+		LDA	#$00
+		STA	flgMnchJukeB
+		STA	flgMnchDirDn
+
+		JSR	inputModule
+		JSR	loadDirectory
+
+		JMP	@update
+	.else
+		JMP	@next0
+	.endif
 
 @testspc:
 		CMP	#' '
@@ -863,8 +881,6 @@ jukeboxStartDefault:
 ;-----------------------------------------------------------
 dirListLoad:
 ;-----------------------------------------------------------
-		JSR	bigglesCloseFile
-
 ;		LDA	#$81
 ;		STA	$D680
 ;
@@ -883,25 +899,8 @@ dirListLoad:
 ;
 ;		JSR	sdwaitawhile
 
+;		JSR	changeDirectory
 
-;*******************************************************************************
-;***FIXME These calls need to be put in bigglesworth
-;*******************************************************************************
-;	Get default drive/partition
-		LDA	#$02
-		STA	$D640
-		NOP
-
-;	Set drive/partition
-		TAX
-		LDA	#$06
-		STA	$D640
-		NOP
-
-;	Change to root directory
-		LDA #$3C
-		STA $D640
-		NOP
 ;*******************************************************************************
 
 		LDA	#$00
@@ -925,8 +924,7 @@ dirListLoad:
 		STA	flgMnchDirDn
 
 		JSR	bigglesOpenDir
-		CMP	#$00
-		BNE	@begin
+		BCS	@begin
 
 ;	Assume this means failure
 @fail:
@@ -2157,6 +2155,80 @@ inputModule:
 		RTS
 
 
+	.if	.not DEF_MNCH_USEMINI
+;-----------------------------------------------------------
+loadDirectory:
+;-----------------------------------------------------------
+		SEI
+
+		LDX	#65
+@loop:
+		LDA	filename, X
+		STA	dirname, X
+		DEX
+		BPL	@loop
+
+		LDX	dirname
+		INX
+		LDA	#$00
+		STA	dirname, X
+
+		JSR	changeDirectory
+
+		CLI
+
+		RTS
+
+;-----------------------------------------------------------
+changeDirectory:
+;-----------------------------------------------------------
+		JSR	bigglesCloseFile
+;***********************************************************
+;***FIXME These calls need to be put in bigglesworth
+;***********************************************************
+;	Close dir
+		LDA	#$16
+		STA	$D640
+		NOP
+
+;	Get default drive/partition
+		LDA	#$02
+		STA	$D640
+		NOP
+
+;	Set drive/partition
+		TAX
+		LDA	#$06
+		STA	$D640
+		NOP
+
+;	Change to root directory
+		LDA #$3C
+		STA $D640
+		NOP
+
+		LDA	dirname
+		BEQ	@root
+
+		LDX	#<(dirname + 1)
+		LDY	#>(dirname + 1)
+
+		JSR	bigglesSetFileName
+
+		JSR	bigglesChangeDir
+		BCC	@exit
+
+		JSR	error
+		RTS
+
+@root:
+
+@exit:
+
+		RTS
+	.endif
+
+
 ;-----------------------------------------------------------
 loadModule:
 ;-----------------------------------------------------------
@@ -2253,6 +2325,10 @@ loadModule:
 		ADC	ptrScreen + 3
 		STA	ptrScreen + 3
 
+		LDA	ptrScreen + 2
+		CMP	#$05
+		BEQ	@done
+
 		JMP	@loop
 
 @done:
@@ -2262,7 +2338,7 @@ loadModule:
 		JSR	bigglesCloseFile
 	.endif
 
-		LDA	#$00
+		LDA	#$10
 		STA	$D020
 
 		JSR	PEPPITO
@@ -2273,6 +2349,37 @@ loadModule:
 		CLI
 
 		RTS
+
+;-----------------------------------------------------------
+testModule:
+;-----------------------------------------------------------
+		LDA	filename
+		BEQ	@decline
+
+		CMP	#$06
+		BNE	@accept
+
+		LDX	#$00
+@loop:
+		LDA	strSurprise0, X
+		CMP	filename + 1, X
+		BNE	@accept
+		INX
+		CPX	#$06
+		BNE	@loop
+
+		LDA	$D015
+		ORA	#$FF
+		STA	$D015
+
+@decline:
+		SEC
+		RTS
+
+@accept:
+		CLC
+		RTS
+
 
 
 ;-----------------------------------------------------------
@@ -2475,11 +2582,16 @@ plyrIRQ:
 		STA	$D020
 
 		JSR	checkLastNotes
+		JSR	plotEqualiser
 		JSR	plotWaveform
 		JSR	plotTexture
 		JSR	scrollTexture
 
-		LDA	#$00
+		LDA	#$0C
+		STA	$D020
+		JSR	animBall
+
+		LDA	#$10
 		STA	$D020
 
 		LDA	#$00
@@ -2510,6 +2622,9 @@ valLastWavs0:
 		.byte	$00
 		.byte	$00
 		.byte	$00
+
+
+
 
 valLastNots0:
 		.word	$0000
@@ -2997,6 +3112,291 @@ checkLastNotes:
 
 		RTS
 
+
+valEqPlots0:
+	.repeat	48
+	.byte	$00
+	.endrepeat
+
+valEqBands0:
+	.repeat	48
+	.word	$0000
+	.endrepeat
+
+adrScreenRow24:
+	.word	ADDR_SCREEN + (160 * 24)
+	.word	ADDR_SCREEN + (160 * 23)
+	.word	ADDR_SCREEN + (160 * 22)
+	.word	ADDR_SCREEN + (160 * 21)
+	.word	ADDR_SCREEN + (160 * 20)
+	.word	ADDR_SCREEN + (160 * 19)
+	.word	ADDR_SCREEN + (160 * 18)
+	.word	ADDR_SCREEN + (160 * 17)
+
+
+;-----------------------------------------------------------
+doEqPlotBands:
+;-----------------------------------------------------------
+		STA	valScrChar
+
+		LDZ	#$00
+		LDY	#$00
+		LDX	#$00
+@loop:
+		LDA	valEqPlots0, X
+		CMP	#$08
+		BCC	@cont
+
+		LDA	#$07
+
+@cont:
+		ASL
+		TAY
+		LDA	adrScreenRow24, Y
+		STA	ptrTempA
+		LDA	adrScreenRow24 + 1, Y
+		STA	ptrTempA + 1
+
+		TXA
+		ASL
+		TAY
+
+		LDA	valScrChar
+		STA	(ptrTempA), Y
+
+		INX
+		CPX	#$30
+		BNE	@loop
+
+		RTS
+
+
+;-----------------------------------------------------------
+doEqClearBands:
+;-----------------------------------------------------------
+		LDX	#$00
+		LDA	#$00
+@loop:
+		STA	valEqBands0, X
+		STA	valEqBands0 + 1, X
+
+		INX
+		INX
+		CPX	#$60
+		BNE	@loop
+
+		RTS
+
+
+;-----------------------------------------------------------
+doEqAddToBand:
+;-----------------------------------------------------------
+		LDY	valScrLPix + 1
+
+		CLC
+		LDA	valScrLPix
+		ADC	valEqBands0, Y
+		STA	valEqBands0, Y
+		LDA	#$00
+		ADC	valEqBands0 + 1, Y
+		STA	valEqBands0 + 1, Y
+
+		LDA	valScrLPix
+		STA	valScrOffs
+
+@loop0:
+		INY
+		INY
+		CPY	#$60
+		BCS	@done0
+
+		LDA	valScrOffs
+		LSR
+		BEQ	@done0
+
+		STA	valScrOffs
+
+		CLC
+		ADC	valEqBands0, Y
+		STA	valEqBands0, Y
+		LDA	#$00
+		ADC	valEqBands0 + 1, Y
+		STA	valEqBands0 + 1, Y
+
+		JMP	@loop0
+
+@done0:
+		LDA	valScrLPix
+		STA	valScrOffs
+
+		LDY	valScrLPix + 1
+		BEQ	@done1
+
+@loop1:
+		DEY
+		DEY
+		BEQ	@done1
+
+		LDA	valScrOffs
+		LSR
+		BEQ	@done1
+
+		STA	valScrOffs
+
+		CLC
+		ADC	valEqBands0, Y
+		STA	valEqBands0, Y
+		LDA	#$00
+		ADC	valEqBands0 + 1, Y
+		STA	valEqBands0 + 1, Y
+
+		JMP	@loop1
+
+@done1:
+		RTS
+
+
+;-----------------------------------------------------------
+doEqCalcBands:
+;-----------------------------------------------------------
+		JSR	doEqClearBands
+
+		LDX	#$00
+		LDY	#$00
+@loop:
+		STX	valScrChar
+
+		TXA
+		ASL
+		TAX
+
+		LDA	valLastNots0, X
+		STA	valScrLPix
+		LDA	valLastNots0 + 1, X
+		STA	valScrLPix + 1
+
+		ORA	valScrLPix
+		LBEQ	@next
+
+		LDA	valScrLPix + 1
+		CMP	#$1E
+		BCC @tst0
+
+		JMP	@cap0
+
+@tst0:
+		CMP	#$03
+		BCC	@calc0
+
+		CMP	#$06
+		BCC	@shift0
+
+		__MNCH_LSR_MEM16	valScrLPix
+		__MNCH_LSR_MEM16	valScrLPix
+
+@shift0:
+		__MNCH_LSR_MEM16	valScrLPix
+;		__MNCH_LSR_MEM16	valScrLPix
+
+@calc0:
+		__MNCH_LSR_MEM16	valScrLPix
+		__MNCH_LSR_MEM16	valScrLPix
+		__MNCH_LSR_MEM16	valScrLPix
+		__MNCH_LSR_MEM16	valScrLPix
+;		__MNCH_LSR_MEM16	valScrLPix
+;		__MNCH_LSR_MEM16	valScrLPix
+
+		LDA	valScrLPix
+		AND	#$3F
+		CMP	#$30
+		BCC	@cont0
+
+@cap0:
+		LDA	#$2F
+
+@cont0:
+		ASL
+		TAY
+
+		LDX	valScrChar
+
+;		SEI
+;@halt:
+;		INC	$D020
+;		JMP	@halt
+
+		LDA	valMnchChVFd, X
+		STA	valScrLPix
+
+		LDA	valEqBands0 + 1, Y
+		BNE	@cont1
+
+		LDA	valEqBands0, Y
+		CMP	#$40
+		BCS	@cont1
+
+		LDA	valScrLPix
+		ASL
+		STA	valScrLPix
+
+@cont1:
+		STY	valScrLPix + 1
+
+		JSR	doEqAddToBand
+
+@next:
+		LDX	valScrChar
+
+		INX
+		CPX	#$04
+		LBNE	@loop
+
+		RTS
+
+
+;-----------------------------------------------------------
+doEqCalcOffs:
+;-----------------------------------------------------------
+		LDX	#$00
+		LDY	#$00
+@loop:
+		LDA	valEqBands0, X
+		STA	valScrLPix
+		LDA	valEqBands0 + 1, X
+		STA	valScrLPix + 1
+
+		__MNCH_LSR_MEM16	valScrLPix
+		__MNCH_LSR_MEM16	valScrLPix
+		__MNCH_LSR_MEM16	valScrLPix
+		__MNCH_LSR_MEM16	valScrLPix
+		__MNCH_LSR_MEM16	valScrLPix
+
+		LDA	valScrLPix
+		STA	valEqPlots0, Y
+
+		INX
+		INX
+		INY
+		CPY	#$30
+		BNE	@loop
+
+		RTS
+
+
+;-----------------------------------------------------------
+plotEqualiser:
+;-----------------------------------------------------------
+		LDA	#$20
+		JSR	doEqPlotBands
+
+		JSR	doEqCalcBands
+		JSR	doEqCalcOffs
+
+		LDA	#'-'
+		JSR	doEqPlotBands
+
+		RTS
+
 ;-----------------------------------------------------------
 plotTexture:
 ;-----------------------------------------------------------
@@ -3473,16 +3873,17 @@ initState:
 		STA	$D018
 
 ;	Normal text mode
-		LDA	#$00
+;		LDA	#$00
+		LDA	#$80
 		STA	$D054
 
 ;	Prevent VIC-II compatibility changes
 		LDA	#$80
 		TRB	$D05D		
 		
-		LDA	#$00
+		LDA	#$10
 		STA	$D020
-;		LDA	#$00
+		LDA	#$00
 		STA	$D021
 
 ;	Set the location of screen RAM
@@ -3503,8 +3904,7 @@ initState:
 		LDA	#$E0
 		STA	$D031
 
-; 	and 80 bytes (40 16-bit characters) per row per 
-;	layer plus 2 goto
+; 	and 160 bytes (80 16-bit characters) per row
 		LDA #<$A0
 		STA $D058
 		LDA #>$A0
@@ -3516,8 +3916,14 @@ initState:
 
 ;	Enable 16 bit char numbers (bit0) and 
 ;	full color for chars>$ff (bit2)
-		LDA	#$05
+;		LDA	#$05
+		LDA	#$85
 		STA	$D054
+
+		LDA	#$00
+		STA	$D064
+		LDA	#$08
+		STA	$D065
 
 ;	Enable Rewrite double buffering to prevent 
 ;	clipping in FCM (bit 7)
@@ -3779,6 +4185,766 @@ initAudio:
 ;		RTS
 
 
+offsX		=	24
+offsY		=	50
+
+VIC     	= 	$D000         		; VIC REGISTERS
+VICXPOS    	= 	VIC + $00      		; LOW ORDER X POSITION
+VICYPOS    	= 	VIC + $01      		; Y POSITION
+VICXPOSMSB 	=	VIC + $10      		; BIT 0 IS HIGH ORDER X POSITION
+
+OFFS_SPRPAL	= $10
+OFFS_SPRDAT	= ($10 * $04)
+SIZE_SPRDAT = $08 * $40 * $04
+
+ADDR_SPRITE0 = $D000
+
+ADDR_SPRPTRS = $4FA0
+
+
+XPos:           
+	.word    	155               	; Current mouse position, X
+YPos:           
+	.word    	80               	; Current mouse position, Y
+	
+tempValue:	
+	.word		0
+strSurprise0:
+		.asciiz	"BOING!"
+	
+;-------------------------------------------------------------------------------
+CMOVEX:
+;-------------------------------------------------------------------------------
+		CLC
+		LDA	XPos
+		ADC	#offsX
+		STA	tempValue
+		LDA	XPos + 1
+		ADC	#$00
+		STA	tempValue + 1
+	
+		LDA	tempValue
+		STA	VICXPOS
+		LDA	tempValue + 1
+		CMP	#$00
+		BEQ	@unset0
+	
+		LDA	VICXPOSMSB
+		ORA	#$01
+		STA	VICXPOSMSB
+		
+		JMP	@next1
+	
+@unset0:
+		LDA	VICXPOSMSB
+		AND	#$FE
+		STA	VICXPOSMSB
+		
+@next1:
+		CLC
+		LDA	XPos
+		ADC	#offsX + 16
+		STA	tempValue
+		LDA	XPos + 1
+		ADC	#$00
+		STA	tempValue + 1
+	
+		LDA	tempValue
+		STA	VICXPOS + 2
+		LDA	tempValue + 1
+		CMP	#$00
+		BEQ	@unset1
+	
+		LDA	VICXPOSMSB
+		ORA	#$02
+		STA	VICXPOSMSB
+		
+		JMP	@next2
+	
+@unset1:
+		LDA	VICXPOSMSB
+		AND	#$FD
+		STA	VICXPOSMSB
+
+@next2:
+		CLC
+		LDA	XPos
+		ADC	#offsX + 32
+		STA	tempValue
+		LDA	XPos + 1
+		ADC	#$00
+		STA	tempValue + 1
+	
+		LDA	tempValue
+		STA	VICXPOS + 4
+		LDA	tempValue + 1
+		CMP	#$00
+		BEQ	@unset2
+	
+		LDA	VICXPOSMSB
+		ORA	#$04
+		STA	VICXPOSMSB
+		
+		JMP	@next3
+	
+@unset2:
+		LDA	VICXPOSMSB
+		AND	#$FB
+		STA	VICXPOSMSB
+
+@next3:
+		CLC
+		LDA	XPos
+		ADC	#offsX + 48
+		STA	tempValue
+		LDA	XPos + 1
+		ADC	#$00
+		STA	tempValue + 1
+	
+		LDA	tempValue
+		STA	VICXPOS + 6
+		LDA	tempValue + 1
+		CMP	#$00
+		BEQ	@unset3
+	
+		LDA	VICXPOSMSB
+		ORA	#$08
+		STA	VICXPOSMSB
+		
+		RTS
+	
+@unset3:
+		LDA	VICXPOSMSB
+		AND	#$F7
+		STA	VICXPOSMSB
+		
+		RTS
+	
+;-------------------------------------------------------------------------------
+CMOVEY:
+;-------------------------------------------------------------------------------
+		CLC
+		LDA	YPos
+		ADC	#offsY
+		STA	tempValue
+		LDA	YPos + 1
+		ADC	#$00
+		STA	tempValue + 1
+	
+		LDA	tempValue
+		STA	VICYPOS
+		STA	VICYPOS + 2
+		STA	VICYPOS + 4
+		STA	VICYPOS + 6
+	
+		RTS
+
+
+
+dmaSprInitLst:	
+	.byte		$0B
+	.byte		$00
+	
+	.byte 		$00
+dmaSprCnt:		
+	.word 		SIZE_SPRDAT
+dmaSprSrc:		
+	.word 		$0000
+	.byte 		$00
+dmaSprDst:		
+	.word 		ADDR_SPRITE0
+	.byte 		$00
+	.byte		$00
+	.word 		$0000
+
+
+dmaPalAnimRLst:	
+;	.byte		$0B
+;	.byte		$00
+;	.byte 		$04
+;	.word 		$000C
+;	.word 		palAnimR0 + 2
+;	.byte 		$00
+;	.word 		palAnimR0 + 1
+;	.byte 		$00
+;	.byte		$00
+;	.word 		$0000
+
+dmaPalAnimAGLst:	
+	.byte		$0B
+	.byte		$00
+	.byte 		$00
+	.word 		$000C
+	.word 		palAnimG0 + 2
+	.byte 		$00
+	.word 		palAnimG0 + 1
+	.byte 		$00
+	.byte		$00
+	.word 		$0000
+
+dmaPalAnimABLst:	
+	.byte		$0B
+	.byte		$00
+	.byte 		$00
+	.word 		$000C
+	.word 		palAnimB0 + 2
+	.byte 		$00
+	.word 		palAnimB0 + 1
+	.byte 		$00
+	.byte		$00
+	.word 		$0000
+
+
+dmaPalAnimBGLst:	
+	.byte		$0B
+	.byte		$00
+	.byte 		$00
+	.word 		$000C
+	.word 		palAnimG0 + $0C
+	.byte 		$40
+	.word 		palAnimG0 + $0D
+	.byte 		$40
+	.byte		$00
+	.word 		$0000
+
+dmaPalAnimBBLst:	
+	.byte		$0B
+	.byte		$00
+	.byte 		$00
+	.word 		$000C
+	.word 		palAnimB0 + $0C
+	.byte 		$40
+	.word 		palAnimB0 + $0D
+	.byte 		$40
+	.byte		$00
+	.word 		$0000
+
+
+cntMove0:
+	.byte		$02
+cntAnim0:
+	.byte		$06
+
+valTmpG0:
+	.byte		$00
+valTmpB0:
+	.byte		$00
+
+valDeltaX:
+	.word		$01
+valDeltaY:
+	.word		$FFFE
+
+palAnimR0:
+	.byte		$00, $EF, $EF, $EF, $EF, $EF, $EF, $EF, $EF, $EF, $EF, $EF, $EF, $00
+palAnimG0:
+	.byte		$00, $FF, $FF, $FF, $FF, $FF, $FF, $00, $00, $00, $00, $00, $00, $00
+palAnimB0:
+	.byte		$00, $FF, $FF, $FF, $FF, $FF, $FF, $00, $00, $00, $00, $00, $00, $00
+
+
+
+;-------------------------------------------------------------------------------
+animBall:
+;-------------------------------------------------------------------------------
+		LDX	cntMove0
+		DEX
+		BEQ	@begin
+
+		STX	cntMove0
+		JMP	@pal
+
+@begin:
+		LDA	YPos
+		CMP	#$25
+		BCS	@medium
+
+		CMP	#$55
+		BCS	@fast
+
+		LDA	#$03
+		STA	cntMove0
+		JMP	@update
+
+@medium:
+		LDA	#$02
+		STA	cntMove0
+		JMP	@update
+
+@fast:
+		LDA	#$01
+		STA	cntMove0
+
+@update:
+		LDA	XPos
+		ORA	XPos + 1
+
+		BEQ	@revx
+
+		LDA	XPos + 1
+		CMP	#>255
+		BNE	@movx
+
+		LDA	XPos
+		CMP	#<255
+		BCC	@movx
+
+		BEQ	@fwdx
+
+@movx:
+		CLC
+		LDA	XPos
+		ADC	valDeltaX
+		STA	XPos
+		LDA	XPos + 1
+		ADC	valDeltaX + 1
+		STA	XPos + 1
+
+		JMP	@tsty
+
+@revx:
+		LDA	#$01
+		STA	valDeltaX
+		LDA	#$00
+		STA	valDeltaX + 1
+		JMP	@movx
+
+@fwdx:
+		LDA	#<-1
+		STA	valDeltaX
+		LDA	#>-1
+		STA	valDeltaX + 1
+		JMP	@movx
+
+@tsty:
+		LDA	YPos
+		ORA	YPos + 1
+		BEQ	@revy
+
+		LDA	YPos 
+		CMP	#135
+		BCS	@fwdy
+
+@movy:
+		CLC
+		LDA	YPos
+		ADC	valDeltaY
+		STA	YPos
+		LDA	YPos + 1
+		ADC	valDeltaY + 1
+		STA	YPos + 1
+
+		JMP	@tstpal
+
+@revy:
+		LDA	#$02
+		STA	valDeltaY
+		LDA	#$00
+		STA	valDeltaY + 1
+		JMP	@movy
+
+@fwdy:
+		LDA	#<-1
+		STA	valDeltaY
+		LDA	#>-1
+		STA	valDeltaY + 1
+		JMP	@movy
+		
+@tstpal:
+		JSR	CMOVEX
+		JSR	CMOVEY
+
+@pal:
+		LDA	valDeltaX
+		BMI	@pala
+
+		JSR	animPaletteB
+		RTS
+
+@pala:
+		JSR	animPaletteA
+		RTS
+
+
+;-------------------------------------------------------------------------------
+animPaletteB:
+;-------------------------------------------------------------------------------
+		LDX	cntAnim0
+		DEX
+		BEQ	@begin
+
+		STX	cntAnim0
+		RTS
+
+@begin:
+		LDA	valDeltaY + 1
+		BEQ	@fast
+
+		LDA	#$03
+		STA	cntAnim0
+		JMP	@update
+
+@fast:
+		LDA	#$01
+		STA	cntAnim0
+
+@update:
+;		LDA	palAnimR0 + $01
+;		STA	palAnimR0 + $0D
+
+		LDA	palAnimG0 + $0C
+		STA	valTmpG0
+
+		LDA	palAnimB0 + $0C
+		STA	valTmpB0
+
+		LDX	#$0B
+@loop:
+		LDA	palAnimG0, X
+		STA	palAnimG0 + 1, X
+
+		LDA	palAnimB0, X
+		STA	palAnimB0 + 1, X
+
+		DEX
+		BNE	@loop
+
+;		LDA #$00
+;		STA $D702
+;		LDA #>dmaPalAnimBGLst
+;		STA	$D701
+;		LDA	#<dmaPalAnimBGLst
+;		STA	$D705
+;
+;		LDA #$00
+;		STA $D702
+;		LDA #>dmaPalAnimBBLst
+;		STA	$D701
+;		LDA	#<dmaPalAnimBBLst
+;		STA	$D705
+;
+		LDA	valTmpG0
+		STA	palAnimG0 + 1
+
+		LDA	valTmpB0
+		STA	palAnimB0 + 1
+
+
+		JSR	loadPalette
+
+		RTS
+
+
+;-------------------------------------------------------------------------------
+animPaletteA:
+;-------------------------------------------------------------------------------
+		LDX	cntAnim0
+		DEX
+		BEQ	@begin
+
+		STX	cntAnim0
+		RTS
+
+@begin:
+		LDA	valDeltaY + 1
+		BEQ	@fast
+
+		LDA	#$03
+		STA	cntAnim0
+		JMP	@update
+
+@fast:
+		LDA	#$01
+		STA	cntAnim0
+
+@update:
+;		LDA	palAnimR0 + $01
+;		STA	palAnimR0 + $0D
+
+		LDA	palAnimG0 + $01
+		STA	palAnimG0 + $0D
+
+		LDA	palAnimB0 + $01
+		STA	palAnimB0 + $0D
+
+		LDA #$00
+		STA $D702
+		LDA #>dmaPalAnimAGLst
+		STA	$D701
+		LDA	#<dmaPalAnimAGLst
+		STA	$D705
+
+		LDA #$00
+		STA $D702
+		LDA #>dmaPalAnimABLst
+		STA	$D701
+		LDA	#<dmaPalAnimABLst
+		STA	$D705
+
+
+		JSR	loadPalette
+
+		RTS
+
+
+;-------------------------------------------------------------------------------
+loadPalette:
+;-------------------------------------------------------------------------------
+		LDA	$D070
+		AND #$3F
+		ORA	#$C0
+		STA	$D070
+
+		LDX	#$4F
+		LDZ	#$FC
+@loop8:
+		CPZ	#$40
+		BCS	@pal0
+
+		TZA
+		AND	#$F0
+		LSR
+		LSR
+		LSR
+		LSR
+		LSR
+		STA	$D200, X
+
+		JMP	@pal1
+
+@pal0:
+		LDA	#$04
+		STA	$D200, X
+
+@pal1:
+		TZA
+		AND	#$F0
+		LSR
+		LSR
+		LSR
+		LSR
+		STA	valScrLPix
+
+		TZA
+		AND	#$0F
+		ASL
+		ASL
+		ASL
+		ASL
+		ORA	valScrLPix
+
+		STA	$D300, X
+
+		TZA
+		LSR
+		CLC
+		ADC	#$08
+		AND	#$F0
+
+		ORA	#$10
+
+		LSR
+		LSR
+		LSR
+		LSR
+		STA	valScrLPix
+
+		TZA
+		LSR
+		CLC
+		ADC	#$08
+		AND	#$0F
+		ASL
+		ASL
+		ASL
+		ASL
+		ORA	valScrLPix
+
+		STA	$D100, X
+
+		TZA
+		SEC
+		SBC	#$08
+		TAZ
+
+		DEX
+		CPX	#$10
+		BNE	@loop8
+
+		LDA	#$03
+		STA	$D310
+		LDA	#$02
+		STA	$D110
+		STA	$D210
+
+
+		LDA	$D070
+		AND #$33
+		ORA	#$44
+		STA	$D070
+
+		LDX	#$00
+@loop:
+		LDA	palAnimR0, X
+		STA	$D100, X
+		STA	$D110, X
+		STA	$D120, X
+		STA	$D130, X
+		STA	$D140, X
+		STA	$D150, X
+		STA	$D160, X
+		STA	$D170, X
+
+		LDA	palAnimG0, X
+		STA	$D200, X
+		STA	$D210, X
+		STA	$D220, X
+		STA	$D230, X
+		STA	$D240, X
+		STA	$D250, X
+		STA	$D260, X
+		STA	$D270, X
+
+		LDA	palAnimB0, X
+		STA	$D300, X
+		STA	$D310, X
+		STA	$D320, X
+		STA	$D330, X
+		STA	$D340, X
+		STA	$D350, X
+		STA	$D360, X
+		STA	$D370, X
+
+		INX
+		CPX	#$0E
+		BNE	@loop
+
+		RTS
+
+
+;-----------------------------------------------------------
+initMemory:
+;-----------------------------------------------------------
+;	Make the memory area pretty for debugging
+		LDA	#$00
+		LDX	#$00
+@loop1:
+		STA	ADDR_DIRFPTRS, X
+		STA	ADDR_DIRFPTRS + $0100, X
+		STA	ADDR_DIRFPTRS + $0200, X
+		STA	ADDR_DIRFPTRS + $0300, X
+		STA	ADDR_DIRFPTRS + $0400, X
+		STA	ADDR_DIRFPTRS + $0500, X
+		STA	ADDR_DIRFPTRS + $0600, X
+		INX
+		BNE	@loop1
+
+		LDA	$D070
+		AND #$33
+		ORA	#$44
+		STA	$D070
+
+
+		JSR	loadPalette
+
+		CLC
+		LDA	#<BIN_SPRITES
+		ADC #<OFFS_SPRDAT
+		STA	dmaSprSrc
+		LDA	#>BIN_SPRITES
+		ADC #>OFFS_SPRDAT
+		STA	dmaSprSrc + 1
+		
+		LDA #$00
+		STA $D702
+		LDA #>dmaSprInitLst
+		STA	$D701
+		LDA	#<dmaSprInitLst
+		STA	$D705	
+		
+		LDA	#$00
+		STA	$D027
+		STA	$D027 + 1
+		STA	$D027 + 2
+		STA	$D027 + 3
+		STA	$D027 + 4
+		STA	$D027 + 5
+		STA	$D027 + 6
+	
+		LDA	#<ADDR_SPRPTRS
+		STA	$D06C
+		LDA	#>ADDR_SPRPTRS
+		STA	$D06D
+
+		LDA	#$80
+		STA	$D06E
+		
+		LDA	#<(ADDR_SPRITE0 / 64)
+		STA	ADDR_SPRPTRS
+		LDA	#>(ADDR_SPRITE0 / 64)
+		STA	ADDR_SPRPTRS + 1
+
+;		LDA	#$00
+;		STA	ADDR_SPRPTRS + 2
+;		STA	ADDR_SPRPTRS + 3
+
+		LDA	#<((ADDR_SPRITE0 + $200) / 64)
+		STA	ADDR_SPRPTRS + 2
+		LDA	#>((ADDR_SPRITE0 + $200) / 64)
+		STA	ADDR_SPRPTRS + 3
+
+;		LDA	#$00
+;		STA	ADDR_SPRPTRS + 6
+;		STA	ADDR_SPRPTRS + 7
+
+		LDA	#<((ADDR_SPRITE0 + $400) / 64)
+		STA	ADDR_SPRPTRS + 4
+		LDA	#>((ADDR_SPRITE0 + $400) / 64)
+		STA	ADDR_SPRPTRS + 5
+
+;		LDA	#$00
+;		STA	ADDR_SPRPTRS + 10
+;		STA	ADDR_SPRPTRS + 11
+
+		LDA	#<((ADDR_SPRITE0 + $600) / 64)
+		STA	ADDR_SPRPTRS + 6
+		LDA	#>((ADDR_SPRITE0 + $600) / 64)
+		STA	ADDR_SPRPTRS + 7
+
+;Palette control for sprites
+;		LDA	$D049
+;		ORA	#$F0
+;		AND	#$0F
+;		STA	$D049
+		
+;		LDA	$D04B
+;		ORA	#$F0
+;		AND	#$0F
+;		STA $D04B
+
+;Enable 16colour sprite 0		
+		LDA #$FF                    
+		STA $D06B		
+
+		LDA	#$FF
+		STA	$D055
+
+		LDA	#$40
+		STA	$D056
+
+;	Set to behind characters
+;		LDA	#$FF
+;		STA	$D01B
+
+;		STA	$D074
+
+
+		JSR	CMOVEX
+		JSR	CMOVEY
+
+		RTS
+
+
 dmaTexInitList:
 	.byte	$0B  				; Request format is F018B
 	.byte	$80,$00 			; Source MB 
@@ -3834,7 +5000,7 @@ dmaClrInitList0:
 	.word	$0FA0				;Count LSB Count MSB
 	.word	$0000				;Source Address LSB Source Address MSB
 	.byte	$00					;Source Address BANK and FLAGS
-	.word	$0000				;Destination Address LSB Destination Address MSB
+	.word	$0800				;Destination Address LSB Destination Address MSB
 	.byte	$08					;Destination Address BANK and FLAGS
 	.byte	$00					;Command MSB
 	.word	$0000				;Modulo LSB / Mode Modulo MSB / Mode
@@ -3850,7 +5016,7 @@ dmaClrInitList1:
 	.word	$0FA0				;Count LSB Count MSB
 	.word	$000F				;Source Address LSB Source Address MSB
 	.byte	$00					;Source Address BANK and FLAGS
-	.word	$0001				;Destination Address LSB Destination Address MSB
+	.word	$0801				;Destination Address LSB Destination Address MSB
 	.byte	$08					;Destination Address BANK and FLAGS
 	.byte	$00					;Command MSB
 	.word	$0000				;Modulo LSB / Mode Modulo MSB / Mode
@@ -4050,85 +5216,6 @@ initScreen:
 		CPY	#$03
 		BNE	@loop6
 
-
-		LDX	#$4F
-		LDZ	#$FC
-@loop8:
-		CPZ	#$40
-		BCS	@pal0
-
-		TZA
-		AND	#$F0
-		LSR
-		LSR
-		LSR
-		LSR
-		LSR
-		STA	$D200, X
-
-		JMP	@pal1
-
-@pal0:
-		LDA	#$04
-		STA	$D200, X
-
-@pal1:
-		TZA
-		AND	#$F0
-		LSR
-		LSR
-		LSR
-		LSR
-		STA	valScrLPix
-
-		TZA
-		AND	#$0F
-		ASL
-		ASL
-		ASL
-		ASL
-		ORA	valScrLPix
-
-		STA	$D300, X
-
-		TZA
-		LSR
-		CLC
-		ADC	#$08
-		AND	#$F0
-		LSR
-		LSR
-		LSR
-		LSR
-		STA	valScrLPix
-
-		TZA
-		LSR
-		CLC
-		ADC	#$08
-		AND	#$0F
-		ASL
-		ASL
-		ASL
-		ASL
-		ORA	valScrLPix
-
-		STA	$D100, X
-
-		TZA
-		SEC
-		SBC	#$08
-		TAZ
-
-		DEX
-		CPX	#$10
-		BNE	@loop8
-
-		LDA	#$00
-		STA	$D110
-		STA	$D210
-		STA	$D310
-
 		RTS
 
 ;-----------------------------------------------------------
@@ -4150,7 +5237,8 @@ initM65IOFast:
 		STA 	$D031
 ; 	2. MEGA65 40.5MHz enable (requires C65 or C128 fast mode to truly enable, 
 ;	hence the above)
-		LDA 	#$40
+;		LDA 	#$40
+		LDA 	#$C0
 		TSB 	$D054
 		
 		RTS
@@ -4160,3 +5248,6 @@ initM65IOFast:
 	.else
 	.include	"bigglesworth.s"
 	.endif
+
+BIN_SPRITES:
+	.incbin	"amiga2.bin"

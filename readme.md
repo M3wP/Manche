@@ -29,7 +29,9 @@ At the very bottom, the current mixer levels are shown.  The levels shown are de
 The middle area is blank until you load a MOD.  This area is divided into two main columns, with the instrument information on the right and MOD and playback information on the left.
 
 ## Controls
-To load a MOD file, press F1 and enter the name of the file to load.  Press Return to accept the file name and load the MOD file.  Mod files are loaded from the SD card.
+To load a MOD file, press F1 and enter the name of the file to load.  Press Return to accept the file name and load the MOD file.  MOD files will be loaded either from the SD Card or floppy disk depending upon the version of Manche you are using.
+
+For the SD Card version of Manche, you can now change the directory that the MOD files are loaded from.  Press F2 to change directories. Enter the directory name to enter or ".." to navigate to the previous directory.
 
 To play or stop the loaded MOD file, press Space.
 
@@ -47,7 +49,7 @@ In jukebox mode, you may press F5 to skip to the next track.
 
 
 ## Limitations
-The MOD files must be no larger than 256kB (262144 bytes).
+The MOD files must be no larger than 320kB (327,680 bytes).  Increased now from the previous versions and will perhaps be the limit for now.
 
 The MOD files must be the original M.K. or M!K! types.
 
